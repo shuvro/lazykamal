@@ -78,15 +78,7 @@ scoop bucket add lazykamal https://github.com/shuvro/scoop-lazykamal
 scoop install lazykamal
 ```
 
-*(Requires creating [scoop-lazykamal](https://github.com/shuvro/scoop-lazykamal) repo first - see below)*
-
-### Chocolatey (Windows)
-
-```bash
-choco install lazykamal
-```
-
-*(Requires the package to be published to [Chocolatey](https://chocolatey.org).)*
+*(Requires creating [scoop-lazykamal](https://github.com/shuvro/scoop-lazykamal) repo first)*
 
 ### Binary release
 
