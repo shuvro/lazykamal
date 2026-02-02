@@ -38,6 +38,7 @@ type Accessory struct {
 // DiscoverApps discovers all Kamal-deployed apps on a remote server
 func DiscoverApps(client *ssh.Client) ([]App, error) {
 	// Get all containers with their labels in JSON format
+	// This is a single SSH command that gets everything we need
 	cmd := `docker ps -a --format '{"ID":"{{.ID}}","Name":"{{.Names}}","Image":"{{.Image}}","Status":"{{.Status}}","State":"{{.State}}","Labels":"{{.Labels}}","Created":"{{.CreatedAt}}"}'`
 
 	output, err := client.Run(cmd)
@@ -50,9 +51,10 @@ func DiscoverApps(client *ssh.Client) ([]App, error) {
 	// Group containers by service and destination
 	apps := groupContainers(containers)
 
-	// Check proxy status for each app
+	// Check proxy status ONCE (it's global, not per-app)
+	proxyStatus := checkProxyStatus(client)
 	for i := range apps {
-		apps[i].ProxyStatus = checkProxyStatus(client, apps[i].Service)
+		apps[i].ProxyStatus = proxyStatus
 	}
 
 	// Sort apps by service name
@@ -238,8 +240,8 @@ func detectBaseApp(service string, allServices map[string]bool) (baseApp string,
 }
 
 // checkProxyStatus checks if kamal-proxy is running for the app
-func checkProxyStatus(client *ssh.Client, service string) string {
-	// Check if kamal-proxy container is running
+func checkProxyStatus(client *ssh.Client) string {
+	// Check if kamal-proxy container is running (global, not per-app)
 	cmd := `docker ps --filter "name=kamal-proxy" --format "{{.Status}}" | head -1`
 	output, err := client.Run(cmd)
 	if err != nil {
