@@ -130,7 +130,7 @@ func TestFindDeployConfigs_NoConfigDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindDeployConfigs() error = %v", err)
 	}
-	if configs != nil && len(configs) != 0 {
+	if len(configs) != 0 {
 		t.Errorf("FindDeployConfigs() returned %d configs, want 0", len(configs))
 	}
 }

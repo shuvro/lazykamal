@@ -34,12 +34,10 @@ func FindDeployConfigs(dir string) ([]DeployDestination, error) {
 		}
 		name := e.Name()
 		var destName string
-		var ext string
 		if name == "deploy.yml" || name == "deploy.yaml" {
 			destName = "production"
-			ext = name[strings.LastIndex(name, "."):]
 		} else if strings.HasPrefix(name, "deploy.") && (strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml")) {
-			ext = name[strings.LastIndex(name, "."):]
+			ext := name[strings.LastIndex(name, "."):]
 			destName = name[7 : len(name)-len(ext)]
 		} else {
 			continue
