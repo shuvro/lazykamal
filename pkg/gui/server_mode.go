@@ -36,6 +36,10 @@ type ServerGUI struct {
 	runningCmd        string
 	cmdStartTime      time.Time
 	spinner           *Spinner
+	// Live log streaming
+	streamingLogs  bool
+	liveLogsStop   chan struct{}
+	streamingContainer string
 }
 
 // ServerScreen represents the current screen in server mode
@@ -175,7 +179,9 @@ func (gui *ServerGUI) renderHeader(g *gocui.Gui) {
 	v.Clear()
 
 	status := green("✓ Connected")
-	if gui.running {
+	if gui.streamingLogs {
+		status = cyan(gui.spinner.Frame()) + " Streaming logs " + dim("(Esc to stop)")
+	} else if gui.running {
 		elapsed := time.Since(gui.cmdStartTime)
 		status = yellow(gui.spinner.Frame()) + " " + gui.runningCmd + " " + dim(formatDuration(elapsed))
 	}
@@ -452,6 +458,13 @@ func (gui *ServerGUI) renderLog(g *gocui.Gui) {
 	}
 	v.Clear()
 
+	// Update title based on streaming status
+	if gui.streamingLogs {
+		v.Title = fmt.Sprintf(" LIVE: %s (Esc to stop) ", truncate(gui.streamingContainer, 20))
+	} else {
+		v.Title = " Output / Logs "
+	}
+
 	gui.logMu.Lock()
 	lines := append([]string(nil), gui.logLines...)
 	gui.logMu.Unlock()
@@ -723,6 +736,12 @@ func (gui *ServerGUI) keyEnter(g *gocui.Gui, v *gocui.View) error {
 }
 
 func (gui *ServerGUI) keyBack(g *gocui.Gui, v *gocui.View) error {
+	// Stop log streaming if active
+	if gui.streamingLogs {
+		gui.stopLogStream()
+		return nil
+	}
+
 	switch gui.screen {
 	case ServerScreenContainerSelect:
 		gui.screen = ServerScreenAppMenu
@@ -869,19 +888,36 @@ func (gui *ServerGUI) viewAppLogs(app docker.App) {
 }
 
 func (gui *ServerGUI) viewContainerLogs(ci ContainerInfo) {
-	gui.logInfo(fmt.Sprintf("Fetching logs for %s [%s]...", ci.Container.Name, ci.Role))
+	// Stop any existing stream
+	gui.stopLogStream()
+
+	gui.logInfo(fmt.Sprintf("Streaming logs from %s [%s]... (press Esc to stop)", ci.Container.Name, ci.Role))
+
+	gui.streamingLogs = true
+	gui.streamingContainer = ci.Container.Name
+	gui.liveLogsStop = make(chan struct{})
 
 	go func() {
-		output, err := docker.GetContainerLogs(gui.client, ci.Container.ID, 100, false)
-		if err != nil {
-			gui.logError("Failed to get logs: " + err.Error())
-			return
-		}
+		err := docker.StreamContainerLogs(gui.client, ci.Container.ID, func(line string) {
+			gui.appendLog([]string{line})
+			// Trigger UI update
+			gui.g.Update(func(g *gocui.Gui) error { return nil })
+		}, gui.liveLogsStop)
 
-		lines := splitLines(output)
-		gui.appendLog(lines)
-		gui.logSuccess(fmt.Sprintf("Fetched %d log lines from %s", len(lines), ci.Container.Name))
+		gui.streamingLogs = false
+		if err != nil {
+			gui.logError("Log stream ended: " + err.Error())
+		} else {
+			gui.logInfo("Log stream stopped")
+		}
 	}()
+}
+
+func (gui *ServerGUI) stopLogStream() {
+	if gui.streamingLogs && gui.liveLogsStop != nil {
+		close(gui.liveLogsStop)
+		gui.streamingLogs = false
+	}
 }
 
 func (gui *ServerGUI) stopContainer(ci ContainerInfo) {
