@@ -49,8 +49,8 @@ const (
 	ServerScreenApps ServerScreen = iota
 	ServerScreenAppMenu
 	ServerScreenContainerSelect
-	ServerScreenActionsMenu  // Submenu: Start/Stop/Restart/etc
-	ServerScreenProxyMenu    // Submenu: Proxy operations
+	ServerScreenActionsMenu // Submenu: Start/Stop/Restart/etc
+	ServerScreenProxyMenu   // Submenu: Proxy operations
 	ServerScreenHelp
 )
 
@@ -196,17 +196,6 @@ func (gui *ServerGUI) renderHeader(g *gocui.Gui) {
 		dim("?: help"))
 }
 
-func (gui *ServerGUI) getBreadcrumb() string {
-	parts := []string{cyan(gui.client.HostDisplay())}
-
-	if gui.screen == ServerScreenAppMenu && gui.selectedApp < len(gui.apps) {
-		app := gui.apps[gui.selectedApp]
-		parts = append(parts, fmt.Sprintf("%s (%s)", app.Service, app.Destination))
-	}
-
-	return dim(fmt.Sprintf("Server: %s", parts[0]))
-}
-
 func (gui *ServerGUI) renderLeftPanel(g *gocui.Gui) {
 	v, _ := g.View(viewMain)
 	if v == nil {
@@ -294,13 +283,13 @@ func (gui *ServerGUI) renderAppMenu(v *gocui.View) {
 		submenu bool
 		danger  bool
 	}{
-		{"Containers", true, false},       // 0 - Select individual containers
-		{"Logs (live)", false, false},     // 1 - Live streaming logs
-		{"Details", false, false},         // 2 - Show container details
-		{"Actions", true, false},          // 3 - Submenu: start/stop/restart
-		{"Proxy", true, false},            // 4 - Submenu: proxy operations
-		{"Exec (shell)", false, false},    // 5 - Show SSH command
-		{"Back", false, false},            // 6 - Go back
+		{"Containers", true, false},    // 0 - Select individual containers
+		{"Logs (live)", false, false},  // 1 - Live streaming logs
+		{"Details", false, false},      // 2 - Show container details
+		{"Actions", true, false},       // 3 - Submenu: start/stop/restart
+		{"Proxy", true, false},         // 4 - Submenu: proxy operations
+		{"Exec (shell)", false, false}, // 5 - Show SSH command
+		{"Back", false, false},         // 6 - Go back
 	}
 
 	for i, item := range menuItems {
@@ -333,15 +322,15 @@ func (gui *ServerGUI) renderActionsMenu(v *gocui.View) {
 		label  string
 		danger bool
 	}{
-		{"Boot / Reboot", false},  // 0
-		{"Start", false},          // 1
-		{"Stop", true},            // 2 - destructive
-		{"Restart", false},        // 3
-		{"Remove stopped", true},  // 4 - destructive
-		{"Images", false},         // 5
-		{"Version", false},        // 6
-		{"Health", false},         // 7
-		{"Back", false},           // 8
+		{"Boot / Reboot", false}, // 0
+		{"Start", false},         // 1
+		{"Stop", true},           // 2 - destructive
+		{"Restart", false},       // 3
+		{"Remove stopped", true}, // 4 - destructive
+		{"Images", false},        // 5
+		{"Version", false},       // 6
+		{"Health", false},        // 7
+		{"Back", false},          // 8
 	}
 
 	for i, item := range menuItems {
@@ -370,13 +359,13 @@ func (gui *ServerGUI) renderProxyMenu(v *gocui.View) {
 		label  string
 		danger bool
 	}{
-		{"Logs (live)", false},  // 0
-		{"Details", false},      // 1
-		{"Restart", false},      // 2
-		{"Reboot", false},       // 3
-		{"Stop", true},          // 4 - destructive
-		{"Start", false},        // 5
-		{"Back", false},         // 6
+		{"Logs (live)", false}, // 0
+		{"Details", false},     // 1
+		{"Restart", false},     // 2
+		{"Reboot", false},      // 3
+		{"Stop", true},         // 4 - destructive
+		{"Start", false},       // 5
+		{"Back", false},        // 6
 	}
 
 	for i, item := range menuItems {
@@ -1382,11 +1371,9 @@ func (gui *ServerGUI) showAppHealth(app docker.App) {
 				continue
 			}
 
-			status := "●"
+			status := red("●")
 			if c.State == "running" {
 				status = green("●")
-			} else {
-				status = red("●")
 			}
 			gui.appendLog([]string{fmt.Sprintf("  %s %s: %s", status, c.Name, strings.TrimSpace(output))})
 		}
