@@ -1108,7 +1108,7 @@ func (gui *ServerGUI) execShell(app docker.App) {
 			cmd := fmt.Sprintf("docker exec %s which %s 2>/dev/null", container.ID, shell)
 			if output, err := gui.client.Run(cmd); err == nil && strings.TrimSpace(output) != "" {
 				gui.logInfo(fmt.Sprintf("Shell available: %s", shell))
-				gui.logInfo(fmt.Sprintf("To connect manually run:"))
+				gui.logInfo("To connect manually run:")
 				gui.logInfo(fmt.Sprintf("  ssh %s docker exec -it %s %s", gui.client.HostDisplay(), container.Name, shell))
 				return
 			}
