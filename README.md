@@ -59,16 +59,22 @@ Ensure `$GOPATH/bin` or `$HOME/go/bin` is in your `PATH`.
 
 ### Install script (Linux / macOS)
 
-Downloads the latest release and installs to `~/.local/bin` (override with `DIR`):
+One-liner that detects your OS/architecture and installs the latest release:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/shuvro/lazykamal/main/scripts/install_update_linux.sh | bash
+curl -sSL https://raw.githubusercontent.com/shuvro/lazykamal/main/scripts/install.sh | bash
 ```
 
 Custom install directory:
 
 ```bash
-DIR=/usr/local/bin bash -c "$(curl -sSL https://raw.githubusercontent.com/shuvro/lazykamal/main/scripts/install_update_linux.sh)"
+curl -sSL https://raw.githubusercontent.com/shuvro/lazykamal/main/scripts/install.sh | DIR=/usr/local/bin bash
+```
+
+Install specific version:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/shuvro/lazykamal/main/scripts/install.sh | VERSION=v1.0.3 bash
 ```
 
 ### Scoop (Windows)
