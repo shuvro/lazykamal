@@ -783,11 +783,32 @@ func (gui *ServerGUI) removeContainer(ci ContainerInfo) {
 			gui.logError(fmt.Sprintf("Failed to remove %s: %s", ci.Container.Name, err.Error()))
 		} else {
 			gui.logSuccess(fmt.Sprintf("Removed %s in %s", ci.Container.Name, formatDuration(time.Since(gui.cmdStartTime))))
-			// Refresh the container list
-			gui.buildContainerList()
+			// Refresh apps from server to get updated container list
+			gui.refreshAppsAndContainers()
 		}
 		gui.running = false
 	}()
+}
+
+// refreshAppsAndContainers refreshes apps from server and rebuilds container list
+func (gui *ServerGUI) refreshAppsAndContainers() {
+	apps, err := docker.DiscoverApps(gui.client)
+	if err != nil {
+		gui.logError("Failed to refresh: " + err.Error())
+		return
+	}
+	gui.apps = apps
+	// Rebuild container list for current app
+	if gui.screen == ServerScreenContainerSelect {
+		gui.buildContainerList()
+		// Adjust selection if it's now out of bounds
+		if gui.selectedContainer >= len(gui.allContainers) {
+			gui.selectedContainer = len(gui.allContainers) - 1
+			if gui.selectedContainer < 0 {
+				gui.selectedContainer = 0
+			}
+		}
+	}
 }
 
 func (gui *ServerGUI) keyDown(g *gocui.Gui, v *gocui.View) error {
@@ -1453,6 +1474,8 @@ func (gui *ServerGUI) removeStoppedContainers(app docker.App) {
 			gui.logInfo("No stopped containers to remove")
 		} else {
 			gui.logSuccess(fmt.Sprintf("Removed %d container(s) in %s", removed, formatDuration(time.Since(gui.cmdStartTime))))
+			// Refresh apps from server
+			gui.refreshAppsAndContainers()
 		}
 	}()
 }
