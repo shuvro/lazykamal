@@ -1,4 +1,4 @@
-.PHONY: build test lint clean install run release-snapshot help
+.PHONY: build test lint clean install run release-snapshot help setup-hooks ci
 
 # Binary name
 BINARY_NAME := lazykamal
@@ -80,3 +80,42 @@ check: fmt vet lint test
 ## coverage: Run tests and open coverage report
 coverage: test
 	$(GOCMD) tool cover -html=coverage.out
+
+## setup-hooks: Install git hooks for local CI checks before push
+setup-hooks:
+	@echo "Setting up git hooks..."
+	git config core.hooksPath .githooks
+	@echo "✓ Git hooks installed! Pre-push checks will run automatically."
+	@echo ""
+	@echo "To disable: git config --unset core.hooksPath"
+
+## ci: Run CI checks locally (same as GitHub Actions)
+ci:
+	@echo "Running CI checks locally..."
+	@echo ""
+	@echo "1/4 Checking formatting..."
+	@test -z "$$(gofmt -l . | grep -v vendor)" || (echo "Files not formatted:" && gofmt -l . && exit 1)
+	@echo "✓ Formatting OK"
+	@echo ""
+	@echo "2/4 Running go vet..."
+	@$(GOVET) ./...
+	@echo "✓ Vet OK"
+	@echo ""
+	@echo "3/4 Building..."
+	@$(GOBUILD) -v ./...
+	@echo "✓ Build OK"
+	@echo ""
+	@echo "4/4 Running tests..."
+	@$(GOTEST) -race ./...
+	@echo "✓ Tests OK"
+	@echo ""
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		echo "5/5 Running golangci-lint..."; \
+		golangci-lint run ./...; \
+		echo "✓ Lint OK"; \
+	else \
+		echo "⚠ golangci-lint not installed, skipping"; \
+		echo "  Install: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+	fi
+	@echo ""
+	@echo "✓ All CI checks passed!"

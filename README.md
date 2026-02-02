@@ -319,12 +319,24 @@ make lint           # Run golangci-lint
 make lint-fix       # Run linter with auto-fix
 make fmt            # Format code
 
-# All checks before PR
+# CI checks (run before pushing!)
+make ci             # Run same checks as GitHub Actions
 make check          # Run fmt, vet, lint, test
+make setup-hooks    # Install pre-push hook for automatic checks
 
 # Release
 make release-snapshot  # Test release build (no publish)
 ```
+
+### Pre-push Hook
+
+To automatically run CI checks before every push:
+
+```bash
+make setup-hooks
+```
+
+This installs a pre-push hook that runs formatting, vet, build, and test checks. If any check fails, the push is aborted so you can fix issues before CI fails.
 
 Or without Make:
 - `go build .` – build binary
