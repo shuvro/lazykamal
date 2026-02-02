@@ -2,8 +2,29 @@
 
 A **lazydocker-style** terminal UI for [Kamal](https://kamal-deploy.org)-deployed apps. Manage deploy, app, server, accessory, and proxy from one interactive screen—no need to remember every `kamal` command.
 
+## Two Modes
+
+### Project Mode (default)
+Run from a Kamal project directory to manage that specific app:
+```bash
+lazykamal                      # In a directory with config/deploy.yml
+lazykamal /path/to/kamal-app   # Or specify the path
+```
+
+### Server Mode (NEW in v0.3.0)
+Connect to any server and discover ALL Kamal-deployed apps:
+```bash
+lazykamal --server 100.70.90.101        # Via IP (works with Tailscale)
+lazykamal --server user@myserver.com    # With username
+lazykamal -s deploy@production:2222     # Custom port
+```
+
+Server mode SSHs to the server, discovers all Kamal apps from Docker container labels, and groups them with their accessories (postgres, redis, sidekiq, etc.).
+
 ## Features
 
+- **Server mode** – Connect to any server and manage ALL Kamal apps at once
+- **Auto-discovery** – Automatically finds and groups apps with their accessories
 - **Live status** – App version and containers for the selected destination refresh every few seconds
 - **Live logs** – Stream app or proxy logs in real time; press Esc to stop
 - **Animated spinner** – Visual feedback with spinning animation while commands run
@@ -14,9 +35,11 @@ A **lazydocker-style** terminal UI for [Kamal](https://kamal-deploy.org)-deploye
 - **Color-coded output** – Green ✓ for success, red ✗ for errors, yellow ● for running
 - **Help overlay** – Press `?` anytime to see all keyboard shortcuts
 - **In-TUI editor** – Edit deploy.yml and secrets without leaving the app
+- **Self-upgrade** – Run `lazykamal --upgrade` to update to the latest version
 
 ### Why Lazykamal?
 
+- **Server-centric management**: See ALL apps on a server, not just one project
 - **Single VPS, many apps**: Discover `config/deploy*.yml` destinations and run any Kamal command per app
 - **All Kamal commands**: Deploy, redeploy, rollback, app, server, accessory, proxy, and more
 - **Written in Go** (like [lazydocker](https://github.com/jesseduffield/lazydocker)), using [gocui](https://github.com/jroimartin/gocui)
@@ -39,7 +62,7 @@ brew install lazykamal
 Or tap this repo (for a frequently updated formula):
 
 ```bash
-brew tap lazykamal/lazykamal https://github.com/lazykamal/homebrew-lazykamal
+brew tap shuvro/lazykamal https://github.com/shuvro/homebrew-lazykamal
 brew install lazykamal
 ```
 
@@ -101,6 +124,8 @@ go build -o lazykamal .
 
 ## Usage
 
+### Project Mode
+
 Run from a directory that contains Kamal config (e.g. `config/deploy.yml` or `config/deploy.staging.yml`):
 
 ```bash
@@ -113,6 +138,30 @@ Optional: pass a working directory:
 lazykamal /path/to/your/kamal-app
 ```
 
+### Server Mode
+
+Connect to a server and discover all Kamal-deployed apps:
+
+```bash
+lazykamal --server 100.70.90.101        # IP address
+lazykamal --server user@myserver.com    # With username  
+lazykamal -s deploy@production:2222     # Custom SSH port
+```
+
+Server mode requires:
+- SSH access to the server (uses your existing SSH keys)
+- Docker running on the server
+
+### CLI Options
+
+```bash
+lazykamal --help          # Show help
+lazykamal --version       # Show version
+lazykamal --upgrade       # Upgrade to latest version
+lazykamal --check-update  # Check if update is available
+lazykamal --uninstall     # Remove lazykamal
+```
+
 ### Keybindings
 
 | Key        | Action                    |
@@ -122,6 +171,8 @@ lazykamal /path/to/your/kamal-app
 | **m**     | Open main command menu     |
 | **b** / **Esc** | Back (or stop live logs) |
 | **r**     | Refresh destinations & status |
+| **j / k** | Scroll log panel down/up   |
+| **J / K** | Scroll status panel down/up |
 | **c**     | Clear output/log panel     |
 | **?**     | Show help overlay          |
 | **q**     | Quit                       |
@@ -134,7 +185,68 @@ lazykamal /path/to/your/kamal-app
 4. **Live status** (top right) – Auto-refreshes every few seconds: app version and containers for the selected destination.
 5. **Output / Live logs** (bottom right) – Last command output, or **streaming** app/proxy logs when you run “Live: App logs” or “Live: Proxy logs”. Press **Esc** to stop streaming.
 
-### Config (edit and restart)
+## Server Mode: App Discovery & Grouping
+
+When using `--server`, Lazykamal discovers all Kamal-deployed apps by inspecting Docker container labels. Apps are automatically grouped with their accessories.
+
+### How it works
+
+Kamal names containers with the pattern `{service}-{accessory}`. Lazykamal parses these names to group related containers:
+
+| Container Service Name | Grouped As |
+|-----------------------|------------|
+| `myapp` | Main app |
+| `myapp-postgres` | Accessory of `myapp` |
+| `myapp-redis` | Accessory of `myapp` |
+| `myapp-sidekiq` | Accessory of `myapp` |
+
+### Example
+
+If your server has these containers:
+```
+repoengine
+repoengine-postgres  
+repoengine-redis
+sparrow_studio
+sparrow_studio-postgres
+```
+
+Lazykamal groups them as:
+```
+● repoengine (production)
+    ├─ Web: 1/1 containers
+    ├─ postgres: 1 container(s)
+    └─ redis: 1 container(s)
+● sparrow_studio (production)
+    ├─ Web: 1/1 containers
+    └─ postgres: 1 container(s)
+```
+
+### Recognized accessory suffixes
+
+Lazykamal recognizes these common accessory naming patterns:
+
+| Category | Suffixes |
+|----------|----------|
+| **Databases** | `-postgres`, `-postgresql`, `-mysql`, `-mariadb`, `-mongodb` |
+| **Caching** | `-redis`, `-memcached`, `-elasticsearch` |
+| **Queues** | `-rabbitmq`, `-sidekiq`, `-worker`, `-jobs` |
+| **Scheduled** | `-cron`, `-scheduler` |
+| **Services** | `-backend`, `-api`, `-frontend`, `-web` |
+
+### Actions in Server Mode
+
+For each discovered app, you can:
+- **View Logs** – Fetch recent container logs
+- **View Containers** – List all containers for the app
+- **Restart App** – Restart all web containers
+- **Stop App** – Stop all web containers
+- **Start App** – Start stopped containers
+- **View Accessories** – List accessory containers
+
+## Config (Project Mode)
+
+### Edit and restart
 
 From **Config** in the main menu you can:
 
