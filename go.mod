@@ -1,4 +1,4 @@
-module github.com/lazykamal/lazykamal
+module github.com/shuvro/lazykamal
 
 go 1.21
 

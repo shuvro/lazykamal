@@ -8,7 +8,7 @@ import (
 	"syscall"
 
 	"github.com/jroimartin/gocui"
-	"github.com/lazykamal/lazykamal/pkg/gui"
+	"github.com/shuvro/lazykamal/pkg/gui"
 )
 
 var version = "dev"
@@ -99,5 +99,5 @@ Keyboard Shortcuts:
   ?           Show help overlay
   q           Quit
 
-For more information, visit: https://github.com/lazykamal/lazykamal`)
+For more information, visit: https://github.com/shuvro/lazykamal`)
 }

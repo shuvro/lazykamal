@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/jroimartin/gocui"
-	"github.com/lazykamal/lazykamal/pkg/kamal"
+	"github.com/shuvro/lazykamal/pkg/kamal"
 	"golang.org/x/term"
 )
 

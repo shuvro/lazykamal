@@ -12,7 +12,7 @@ Thanks for considering contributing! Here's how to get started.
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/lazykamal/lazykamal.git
+   git clone https://github.com/shuvro/lazykamal.git
    cd lazykamal
    ```
 

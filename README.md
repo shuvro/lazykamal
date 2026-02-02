@@ -52,7 +52,7 @@ brew install --build-from-source ./Formula/lazykamal.rb
 ### Go install
 
 ```bash
-go install github.com/lazykamal/lazykamal@latest
+go install github.com/shuvro/lazykamal@latest
 ```
 
 Ensure `$GOPATH/bin` or `$HOME/go/bin` is in your `PATH`.
@@ -90,12 +90,12 @@ choco install lazykamal
 
 ### Binary release
 
-Download the latest [release](https://github.com/lazykamal/lazykamal/releases) for your OS and architecture (e.g. `lazykamal_1.0.0_Linux_amd64.tar.gz`), extract, and put `lazykamal` in your `PATH`.
+Download the latest [release](https://github.com/shuvro/lazykamal/releases) for your OS and architecture (e.g. `lazykamal_1.0.0_Linux_amd64.tar.gz`), extract, and put `lazykamal` in your `PATH`.
 
 ### Build from source
 
 ```bash
-git clone https://github.com/lazykamal/lazykamal.git
+git clone https://github.com/shuvro/lazykamal.git
 cd lazykamal
 go build -o lazykamal .
 ./lazykamal
