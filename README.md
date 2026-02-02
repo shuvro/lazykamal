@@ -72,6 +72,13 @@ Or install from the local formula (after cloning):
 brew install --build-from-source ./Formula/lazykamal.rb
 ```
 
+### Scoop (Windows)
+
+```powershell
+scoop bucket add lazykamal https://github.com/shuvro/scoop-lazykamal
+scoop install lazykamal
+```
+
 ### Go install
 
 ```bash
