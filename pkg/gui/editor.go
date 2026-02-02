@@ -211,12 +211,16 @@ func (gui *GUI) renderEditorView(g *gocui.Gui) error {
 		return nil
 	}
 	maxX, maxY := g.Size()
-	if maxY < 8 {
-		maxY = 8
+	// Ensure minimum dimensions to avoid gocui errors
+	if maxX < 10 || maxY < 5 {
+		return fmt.Errorf("terminal too small (need at least 10x5, got %dx%d)", maxX, maxY)
 	}
-	// Editor area: full screen minus one line for status
-	editorH := maxY - 1
-	if v, err := g.SetView(viewEditor, 0, 0, maxX-1, editorH-1); err != nil {
+	// Editor area: full screen minus two lines for status
+	editorH := maxY - 2
+	if editorH < 1 {
+		editorH = 1
+	}
+	if v, err := g.SetView(viewEditor, 0, 0, maxX-1, editorH); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
@@ -255,7 +259,7 @@ func (gui *GUI) renderEditorView(g *gocui.Gui) error {
 	g.SetCurrentView(viewEditor)
 
 	// Status line at bottom
-	if _, err := g.SetView(viewEditorStatus, 0, editorH, maxX-1, maxY-1); err != nil {
+	if _, err := g.SetView(viewEditorStatus, 0, editorH+1, maxX-1, maxY-1); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}

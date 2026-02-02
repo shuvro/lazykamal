@@ -102,6 +102,8 @@ type GUI struct {
 	editor         *editorState
 	spinner        *Spinner
 	confirm        *confirmState
+	logScroll      int // scroll offset for log view
+	statusScroll   int // scroll offset for status view
 }
 
 // New creates a new GUI. Call FindDeployConfigs after to set destinations.
@@ -263,7 +265,7 @@ func (gui *GUI) renderHelpOverlay(g *gocui.Gui) error {
 
 	// Center the help overlay
 	width := 60
-	height := 22
+	height := 28
 	if width > maxX-4 {
 		width = maxX - 4
 	}
@@ -306,6 +308,13 @@ func (gui *GUI) renderHelpOverlay(g *gocui.Gui) error {
    r           Refresh destinations and status
    c           Clear output/log panel
 
+ Scrolling (right panels)
+ ──────────────────────────────────────────────
+   [ / PgUp    Scroll log up
+   ] / PgDn    Scroll log down
+   {           Scroll status up
+   }           Scroll status down
+
  Live Logs
  ──────────────────────────────────────────────
    Esc         Stop live log streaming
@@ -341,7 +350,42 @@ func (gui *GUI) renderStatus(g *gocui.Gui) {
 		fmt.Fprintln(v, " Polling app version & containers...")
 		return
 	}
-	fmt.Fprint(v, text)
+
+	lines := strings.Split(text, "\n")
+	_, viewHeight := v.Size()
+	if viewHeight < 1 {
+		viewHeight = 1
+	}
+
+	// Calculate scroll bounds
+	maxScroll := len(lines) - viewHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if gui.statusScroll > maxScroll {
+		gui.statusScroll = maxScroll
+	}
+	if gui.statusScroll < 0 {
+		gui.statusScroll = 0
+	}
+
+	start := gui.statusScroll
+	end := start + viewHeight
+	if end > len(lines) {
+		end = len(lines)
+	}
+
+	for _, l := range lines[start:end] {
+		fmt.Fprintln(v, l)
+	}
+
+	// Show scroll indicator
+	if gui.statusScroll > 0 || end < len(lines) {
+		scrollInfo := fmt.Sprintf(" [%d-%d/%d]", start+1, end, len(lines))
+		v.Title = fmt.Sprintf(" Live status %s", scrollInfo)
+	} else {
+		v.Title = " Live status "
+	}
 }
 
 func (gui *GUI) renderLeftPanel(g *gocui.Gui) {
@@ -571,12 +615,39 @@ func (gui *GUI) renderLog(g *gocui.Gui) {
 		fmt.Fprintln(v, " Command output will appear here.")
 		return
 	}
-	start := 0
-	if len(lines) > gui.maxY-6 {
-		start = len(lines) - (gui.maxY - 6)
+	_, viewHeight := v.Size()
+	if viewHeight < 1 {
+		viewHeight = 1
 	}
-	for _, l := range lines[start:] {
+
+	// Calculate scroll bounds
+	maxScroll := len(lines) - viewHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if gui.logScroll > maxScroll {
+		gui.logScroll = maxScroll
+	}
+	if gui.logScroll < 0 {
+		gui.logScroll = 0
+	}
+
+	start := gui.logScroll
+	end := start + viewHeight
+	if end > len(lines) {
+		end = len(lines)
+	}
+
+	for _, l := range lines[start:end] {
 		fmt.Fprintln(v, l)
+	}
+
+	// Show scroll indicator if scrolled
+	if gui.logScroll > 0 || end < len(lines) {
+		scrollInfo := fmt.Sprintf(" [%d-%d of %d] ", start+1, end, len(lines))
+		v.Title = fmt.Sprintf(" Output / Live logs %s", scrollInfo)
+	} else {
+		v.Title = " Output / Live logs "
 	}
 }
 
@@ -847,6 +918,26 @@ func (gui *GUI) keybindings(g *gocui.Gui) error {
 	if err := g.SetKeybinding("", 'c', gocui.ModNone, gui.keyClearLog); err != nil {
 		return err
 	}
+	// Scroll log view: [ and ] or Page Up/Down
+	if err := g.SetKeybinding("", '[', gocui.ModNone, gui.keyScrollLogUp); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", ']', gocui.ModNone, gui.keyScrollLogDown); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", gocui.KeyPgup, gocui.ModNone, gui.keyScrollLogUp); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", gocui.KeyPgdn, gocui.ModNone, gui.keyScrollLogDown); err != nil {
+		return err
+	}
+	// Scroll status view: { and }
+	if err := g.SetKeybinding("", '{', gocui.ModNone, gui.keyScrollStatusUp); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", '}', gocui.ModNone, gui.keyScrollStatusDown); err != nil {
+		return err
+	}
 	// Confirm dialog: left/right arrows and enter
 	if err := g.SetKeybinding(viewConfirm, gocui.KeyArrowLeft, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		gui.confirmLeft()
@@ -1020,6 +1111,49 @@ func (gui *GUI) keyClearLog(g *gocui.Gui, v *gocui.View) error {
 	gui.logMu.Lock()
 	gui.logLines = make([]string, 0, logBufLive)
 	gui.logMu.Unlock()
+	gui.logScroll = 0
+	return nil
+}
+
+func (gui *GUI) keyScrollLogUp(g *gocui.Gui, v *gocui.View) error {
+	if gui.screen == ScreenEditor || gui.screen == ScreenHelp {
+		return nil
+	}
+	if gui.logScroll > 0 {
+		gui.logScroll -= 5
+		if gui.logScroll < 0 {
+			gui.logScroll = 0
+		}
+	}
+	return nil
+}
+
+func (gui *GUI) keyScrollLogDown(g *gocui.Gui, v *gocui.View) error {
+	if gui.screen == ScreenEditor || gui.screen == ScreenHelp {
+		return nil
+	}
+	gui.logScroll += 5
+	return nil
+}
+
+func (gui *GUI) keyScrollStatusUp(g *gocui.Gui, v *gocui.View) error {
+	if gui.screen == ScreenEditor || gui.screen == ScreenHelp {
+		return nil
+	}
+	if gui.statusScroll > 0 {
+		gui.statusScroll -= 3
+		if gui.statusScroll < 0 {
+			gui.statusScroll = 0
+		}
+	}
+	return nil
+}
+
+func (gui *GUI) keyScrollStatusDown(g *gocui.Gui, v *gocui.View) error {
+	if gui.screen == ScreenEditor || gui.screen == ScreenHelp {
+		return nil
+	}
+	gui.statusScroll += 3
 	return nil
 }
 
