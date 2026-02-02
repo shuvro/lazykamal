@@ -25,8 +25,8 @@ type ServerGUI struct {
 	client            *ssh.Client
 	apps              []docker.App
 	selectedApp       int
-	selectedItem      int // For submenu navigation
-	selectedContainer int // For container selection
+	selectedItem      int             // For submenu navigation
+	selectedContainer int             // For container selection
 	allContainers     []ContainerInfo // Flattened list of all containers for current app
 	screen            ServerScreen
 	logLines          []string
@@ -37,8 +37,8 @@ type ServerGUI struct {
 	cmdStartTime      time.Time
 	spinner           *Spinner
 	// Live log streaming
-	streamingLogs  bool
-	liveLogsStop   chan struct{}
+	streamingLogs      bool
+	liveLogsStop       chan struct{}
 	streamingContainer string
 }
 
@@ -351,7 +351,7 @@ func (gui *ServerGUI) renderContainerSelect(v *gocui.View) {
 
 	fmt.Fprintln(v, "")
 	fmt.Fprintln(v, dim("───────────────"))
-	
+
 	// Show actions for selected container
 	if gui.selectedContainer < len(gui.allContainers) {
 		fmt.Fprintln(v, "")
@@ -952,17 +952,6 @@ func (gui *ServerGUI) startContainer(ci ContainerInfo) {
 	}()
 }
 
-func (gui *ServerGUI) viewContainers(app docker.App) {
-	gui.logInfo(fmt.Sprintf("Containers for %s:", app.Service))
-	for _, c := range app.Containers {
-		status := "running"
-		if c.State != "running" {
-			status = c.State
-		}
-		gui.appendLog([]string{fmt.Sprintf("  %s - %s - %s", c.Name, c.ID[:12], status)})
-	}
-}
-
 func (gui *ServerGUI) restartApp(app docker.App) {
 	if len(app.Containers) == 0 {
 		gui.logError("No containers to restart")
@@ -1033,25 +1022,6 @@ func (gui *ServerGUI) startApp(app docker.App) {
 		gui.running = false
 		gui.logSuccess(fmt.Sprintf("Start completed in %s", formatDuration(time.Since(gui.cmdStartTime))))
 	}()
-}
-
-func (gui *ServerGUI) viewAccessories(app docker.App) {
-	if len(app.Accessories) == 0 {
-		gui.logInfo("No accessories for this app")
-		return
-	}
-
-	gui.logInfo(fmt.Sprintf("Accessories for %s:", app.Service))
-	for _, acc := range app.Accessories {
-		gui.appendLog([]string{fmt.Sprintf("  %s:", acc.Name)})
-		for _, c := range acc.Containers {
-			status := "running"
-			if c.State != "running" {
-				status = c.State
-			}
-			gui.appendLog([]string{fmt.Sprintf("    - %s (%s)", c.Name, status)})
-		}
-	}
 }
 
 func splitLines(s string) []string {

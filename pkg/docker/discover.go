@@ -220,13 +220,13 @@ func detectBaseApp(service string, allServices map[string]bool) (baseApp string,
 	// If this service name contains a hyphen, check if a parent exists
 	// We try progressively shorter prefixes
 	// e.g., "myapp-foo-bar" -> try "myapp-foo", then "myapp"
-	
+
 	parts := strings.Split(service, "-")
-	
+
 	// Try each possible prefix (from longest to shortest)
 	for i := len(parts) - 1; i > 0; i-- {
 		potentialBase := strings.Join(parts[:i], "-")
-		
+
 		// Check if this potential base exists as a standalone service
 		if allServices[potentialBase] {
 			// Found a parent! This service is an accessory
@@ -234,7 +234,7 @@ func detectBaseApp(service string, allServices map[string]bool) (baseApp string,
 			return potentialBase, accessory
 		}
 	}
-	
+
 	// No parent found - this is a main app
 	return service, ""
 }
