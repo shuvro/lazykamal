@@ -2,10 +2,12 @@ package ssh
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Client represents an SSH connection to a remote server
@@ -41,16 +43,28 @@ func NewClient(host string) *Client {
 }
 
 // Run executes a command on the remote server and returns the output
+// Has a 30 second timeout to prevent hanging
 func (c *Client) Run(command string) (string, error) {
+	return c.RunWithTimeout(command, 30*time.Second)
+}
+
+// RunWithTimeout executes a command with a custom timeout
+func (c *Client) RunWithTimeout(command string, timeout time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	args := c.buildSSHArgs()
 	args = append(args, command)
 
-	cmd := exec.Command("ssh", args...)
+	cmd := exec.CommandContext(ctx, "ssh", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
+	if ctx.Err() == context.DeadlineExceeded {
+		return "", fmt.Errorf("command timed out after %v", timeout)
+	}
 	if err != nil {
 		// Include stderr in error message for debugging
 		if stderr.Len() > 0 {
