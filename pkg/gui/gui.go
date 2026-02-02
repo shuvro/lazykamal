@@ -194,12 +194,13 @@ func (gui *GUI) layout(g *gocui.Gui) error {
 		statusIndicator = " " + green(iconCheck) + " Ready"
 	}
 
-	// Breadcrumb navigation
+	// Mode indicator and breadcrumb
+	modeLabel := green("[PROJECT MODE]")
 	breadcrumb := gui.getBreadcrumb()
 
-	fmt.Fprintf(header, " %s %s %s | %s |%s\n",
+	fmt.Fprintf(header, " %s %s %s | %s %s |%s | %s\n",
 		cyan(iconRocket), bold("Lazykamal"), dim(gui.version),
-		breadcrumb, statusIndicator)
+		modeLabel, breadcrumb, statusIndicator, dim("?: help"))
 
 	// Left panel: apps / menu (about 40% width)
 	leftW := maxX * 4 / 10
@@ -291,47 +292,39 @@ func (gui *GUI) renderHelpOverlay(g *gocui.Gui) error {
 	}
 	v.Clear()
 
-	help := `
- KEYBOARD SHORTCUTS
- ══════════════════════════════════════════════
+	help := fmt.Sprintf(`%s
+ %s
 
- Navigation
+ Project Mode uses the Kamal CLI with your deploy.yml.
+ ALL commands available: deploy, redeploy, rollback, etc.
+
+ %s
  ──────────────────────────────────────────────
-   ↑/↓         Move up/down in menus
-   Enter       Select item / Execute command
-   Esc / b     Go back to previous screen
-   m           Jump to main menu
-   q / Ctrl+C  Quit application
+   ↑/↓         Navigate menus
+   Enter       Select / Execute
+   Esc / b     Go back          m    Main menu
+   r           Refresh          c    Clear log
+   j/k         Scroll log       J/K  Scroll status
+   q           Quit             ?    This help
 
- Actions
- ──────────────────────────────────────────────
-   r           Refresh destinations and status
-   c           Clear output/log panel
-
- Scrolling (right panels)
- ──────────────────────────────────────────────
-   j / PgDn    Scroll log down
-   k / PgUp    Scroll log up
-   J (shift)   Scroll status down
-   K (shift)   Scroll status up
-
- Live Logs
- ──────────────────────────────────────────────
-   Esc         Stop live log streaming
-
- Editor (when editing files)
+ %s
  ──────────────────────────────────────────────
    ↑/↓/←/→     Move cursor
    Ctrl+S      Save file
-   Ctrl+Q/Esc  Quit editor (prompts if unsaved)
+   Ctrl+Q/Esc  Quit editor
 
- Help
+ %s
  ──────────────────────────────────────────────
-   ?           Show this help overlay
-   Esc / ?     Close help
+ For container management on remote servers:
+   $ lazykamal --server user@hostname
 
- Press Esc or ? to close this help
-`
+ Press Esc or ? to close
+`,
+		green("╔══════════════════════════════════════════════╗"),
+		green("║         YOU ARE IN PROJECT MODE              ║"),
+		bold("KEYBOARD SHORTCUTS"),
+		bold("EDITOR (when editing files)"),
+		bold("SERVER MODE (different mode)"))
 	fmt.Fprint(v, help)
 	g.SetCurrentView(viewHelp)
 	return nil

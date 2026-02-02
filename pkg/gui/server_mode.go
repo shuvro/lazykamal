@@ -186,11 +186,14 @@ func (gui *ServerGUI) renderHeader(g *gocui.Gui) {
 		status = yellow(gui.spinner.Frame()) + " " + gui.runningCmd + " " + dim(formatDuration(elapsed))
 	}
 
-	breadcrumb := gui.getBreadcrumb()
-	fmt.Fprintf(v, " %s%s %s | %s | %s",
+	// Show mode indicator prominently
+	modeLabel := yellow("[SERVER MODE]") + " " + cyan(gui.client.HostDisplay())
+
+	fmt.Fprintf(v, " %s%s %s | %s | %s | %s",
 		iconRocket, bold("Lazykamal"), dim(gui.version),
-		breadcrumb,
-		status)
+		modeLabel,
+		status,
+		dim("?: help"))
 }
 
 func (gui *ServerGUI) getBreadcrumb() string {
@@ -585,8 +588,8 @@ func (gui *ServerGUI) renderLog(g *gocui.Gui) {
 
 func (gui *ServerGUI) renderHelpOverlay(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
-	width := 50
-	height := 18
+	width := 60
+	height := 28
 	x0 := (maxX - width) / 2
 	y0 := (maxY - height) / 2
 
@@ -595,7 +598,7 @@ func (gui *ServerGUI) renderHelpOverlay(g *gocui.Gui) error {
 			return err
 		}
 		v.Frame = true
-		v.Title = " Server Mode Help "
+		v.Title = " Help "
 	}
 
 	v, _ := g.View(viewHelp)
@@ -605,20 +608,28 @@ func (gui *ServerGUI) renderHelpOverlay(g *gocui.Gui) error {
 	v.Clear()
 
 	fmt.Fprintln(v, "")
-	fmt.Fprintln(v, " KEYBOARD SHORTCUTS")
-	fmt.Fprintln(v, " ══════════════════════════════════════")
+	fmt.Fprintln(v, yellow("  ╔══════════════════════════════════════════════════╗"))
+	fmt.Fprintln(v, yellow("  ║")+bold("          YOU ARE IN SERVER MODE                ")+yellow("║"))
+	fmt.Fprintln(v, yellow("  ╚══════════════════════════════════════════════════╝"))
 	fmt.Fprintln(v, "")
-	fmt.Fprintln(v, "   ↑/↓       Navigate apps/menu")
-	fmt.Fprintln(v, "   Enter     Select / Execute")
-	fmt.Fprintln(v, "   b/Esc     Go back")
-	fmt.Fprintln(v, "   r         Refresh apps")
-	fmt.Fprintln(v, "   j/k       Scroll log down/up")
-	fmt.Fprintln(v, "   c         Clear log")
-	fmt.Fprintln(v, "   ?         Toggle help")
-	fmt.Fprintln(v, "   q         Quit")
+	fmt.Fprintln(v, "  Server Mode connects via SSH to manage containers")
+	fmt.Fprintln(v, "  using Docker commands directly on the server.")
 	fmt.Fprintln(v, "")
-	fmt.Fprintln(v, " ══════════════════════════════════════")
-	fmt.Fprintln(v, "   Press ? or Esc to close")
+	fmt.Fprintln(v, dim("  Available: logs, start, stop, restart, health, etc."))
+	fmt.Fprintln(v, red("  NOT available: deploy, redeploy, rollback, build"))
+	fmt.Fprintln(v, "")
+	fmt.Fprintln(v, cyan("  For deploy commands, use Project Mode:"))
+	fmt.Fprintln(v, "    $ lazykamal /path/to/kamal/project")
+	fmt.Fprintln(v, "")
+	fmt.Fprintln(v, " ──────────────────────────────────────────────────────")
+	fmt.Fprintln(v, "  KEYBOARD SHORTCUTS")
+	fmt.Fprintln(v, " ──────────────────────────────────────────────────────")
+	fmt.Fprintln(v, "   ↑/↓       Navigate       j/k       Scroll logs")
+	fmt.Fprintln(v, "   Enter     Select         c         Clear log")
+	fmt.Fprintln(v, "   b/Esc     Go back        r         Refresh apps")
+	fmt.Fprintln(v, "   ?         Help           q         Quit")
+	fmt.Fprintln(v, "")
+	fmt.Fprintln(v, dim("  Press ? or Esc to close"))
 
 	return nil
 }
