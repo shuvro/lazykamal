@@ -244,13 +244,17 @@ The detection also handles nested hyphens correctly:
 
 ### Actions in Server Mode
 
-For each discovered app, you can:
-- **View Logs** – Fetch recent container logs
-- **View Containers** – List all containers for the app
-- **Restart App** – Restart all web containers
-- **Stop App** – Stop all web containers
-- **Start App** – Start stopped containers
-- **View Accessories** – List accessory containers
+For each discovered app, you have access to a comprehensive menu:
+
+| Category | Commands |
+|----------|----------|
+| **Containers** | Select and manage individual containers (logs, restart, stop, start) |
+| **App** | Logs (live streaming), Details, Images, Version, Health |
+| **Actions** | Boot/Reboot, Start, Stop, Restart, Remove (stopped containers) |
+| **Commands** | Exec (shell) – shows SSH command to connect |
+| **Proxy** | Logs (live streaming), Details, Restart, Reboot, Stop, Start |
+
+All actions mirror Kamal CLI commands but work directly via SSH + Docker, so you don't need Kamal installed on the server.
 
 ## Config (Project Mode)
 
