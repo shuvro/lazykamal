@@ -71,7 +71,8 @@ func buildGlobalArgs(opts RunOptions) []string {
 
 // RunKamal runs the kamal CLI with the given subcommand and options.
 func RunKamal(subcommand []string, opts RunOptions) (Result, error) {
-	args := append(buildGlobalArgs(opts), subcommand...)
+	// Kamal expects: kamal <subcommand> [options]
+	args := append(subcommand, buildGlobalArgs(opts)...)
 	cmd := exec.Command("kamal", args...)
 	cmd.Dir = opts.Cwd
 	var stdout, stderr bytes.Buffer
@@ -96,7 +97,8 @@ func RunKamal(subcommand []string, opts RunOptions) (Result, error) {
 // line-by-line to onLine. It returns when the command exits or stopCh is closed.
 // onLine is called from a goroutine; the caller may use it to update UI (e.g. append to log).
 func RunKamalStream(subcommand []string, opts RunOptions, onLine func(line string), stopCh <-chan struct{}) error {
-	args := append(buildGlobalArgs(opts), subcommand...)
+	// Kamal expects: kamal <subcommand> [options]
+	args := append(subcommand, buildGlobalArgs(opts)...)
 	cmd := exec.Command("kamal", args...)
 	cmd.Dir = opts.Cwd
 	stdout, err := cmd.StdoutPipe()
