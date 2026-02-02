@@ -11,23 +11,31 @@ import (
 	"github.com/shuvro/lazykamal/pkg/ssh"
 )
 
+// ContainerInfo represents a container with its role/type for display
+type ContainerInfo struct {
+	Container docker.Container
+	Role      string // "web", "postgres", "redis", etc.
+}
+
 // ServerGUI holds server mode TUI state
 type ServerGUI struct {
-	g            *gocui.Gui
-	version      string
-	host         string
-	client       *ssh.Client
-	apps         []docker.App
-	selectedApp  int
-	selectedItem int // For submenu navigation
-	screen       ServerScreen
-	logLines     []string
-	logMu        sync.Mutex
-	logScroll    int
-	running      bool
-	runningCmd   string
-	cmdStartTime time.Time
-	spinner      *Spinner
+	g                 *gocui.Gui
+	version           string
+	host              string
+	client            *ssh.Client
+	apps              []docker.App
+	selectedApp       int
+	selectedItem      int // For submenu navigation
+	selectedContainer int // For container selection
+	allContainers     []ContainerInfo // Flattened list of all containers for current app
+	screen            ServerScreen
+	logLines          []string
+	logMu             sync.Mutex
+	logScroll         int
+	running           bool
+	runningCmd        string
+	cmdStartTime      time.Time
+	spinner           *Spinner
 }
 
 // ServerScreen represents the current screen in server mode
@@ -36,6 +44,7 @@ type ServerScreen int
 const (
 	ServerScreenApps ServerScreen = iota
 	ServerScreenAppMenu
+	ServerScreenContainerSelect // New: select a container for actions
 	ServerScreenContainers
 	ServerScreenAccessories
 	ServerScreenHelp
@@ -201,6 +210,8 @@ func (gui *ServerGUI) renderLeftPanel(g *gocui.Gui) {
 		gui.renderAppsList(v)
 	case ServerScreenAppMenu:
 		gui.renderAppMenu(v)
+	case ServerScreenContainerSelect:
+		gui.renderContainerSelect(v)
 	}
 }
 
@@ -264,13 +275,12 @@ func (gui *ServerGUI) renderAppMenu(v *gocui.View) {
 	v.Title = fmt.Sprintf(" %s (%s) ", app.Service, app.Destination)
 
 	menuItems := []string{
-		"View Logs",
-		"View Containers",
-		"Restart App",
-		"Stop App",
-		"Start App",
+		"Select Container...",
 		"───────────────",
-		"View Accessories",
+		"View All Logs",
+		"Restart All",
+		"Stop All",
+		"Start All",
 		"───────────────",
 		"Back",
 	}
@@ -287,7 +297,7 @@ func (gui *ServerGUI) renderAppMenu(v *gocui.View) {
 		}
 
 		// Color destructive actions
-		if item == "Stop App" {
+		if item == "Stop All" {
 			item = red(item)
 		}
 
@@ -296,6 +306,84 @@ func (gui *ServerGUI) renderAppMenu(v *gocui.View) {
 
 	fmt.Fprintln(v, "")
 	fmt.Fprintln(v, dim(" Enter: select  b/Esc: back"))
+}
+
+func (gui *ServerGUI) renderContainerSelect(v *gocui.View) {
+	if gui.selectedApp >= len(gui.apps) {
+		return
+	}
+	app := gui.apps[gui.selectedApp]
+	v.Title = fmt.Sprintf(" %s - Select Container ", app.Service)
+
+	// Build container list if not already done
+	if len(gui.allContainers) == 0 {
+		gui.buildContainerList()
+	}
+
+	for i, ci := range gui.allContainers {
+		prefix := "  "
+		if i == gui.selectedContainer {
+			prefix = cyan(iconArrow) + " "
+		}
+
+		status := green("●")
+		if ci.Container.State != "running" {
+			status = red("●")
+		}
+
+		name := ci.Container.Name
+		if len(name) > 25 {
+			name = name[:22] + "..."
+		}
+
+		line := fmt.Sprintf("%s%s %s", prefix, status, name)
+		if ci.Role != "" {
+			line += dim(fmt.Sprintf(" [%s]", ci.Role))
+		}
+		fmt.Fprintln(v, line)
+	}
+
+	fmt.Fprintln(v, "")
+	fmt.Fprintln(v, dim("───────────────"))
+	
+	// Show actions for selected container
+	if gui.selectedContainer < len(gui.allContainers) {
+		fmt.Fprintln(v, "")
+		fmt.Fprintln(v, dim(" Actions:"))
+		fmt.Fprintln(v, "   l - View Logs")
+		fmt.Fprintln(v, "   r - Restart")
+		fmt.Fprintln(v, "   s - Stop")
+		fmt.Fprintln(v, "   S - Start")
+	}
+
+	fmt.Fprintln(v, "")
+	fmt.Fprintln(v, dim(" ↑/↓ select  b/Esc: back"))
+}
+
+func (gui *ServerGUI) buildContainerList() {
+	if gui.selectedApp >= len(gui.apps) {
+		return
+	}
+	app := gui.apps[gui.selectedApp]
+	gui.allContainers = nil
+
+	// Add main app containers
+	for _, c := range app.Containers {
+		gui.allContainers = append(gui.allContainers, ContainerInfo{
+			Container: c,
+			Role:      "web",
+		})
+	}
+
+	// Add accessory containers
+	for _, acc := range app.Accessories {
+		for _, c := range acc.Containers {
+			gui.allContainers = append(gui.allContainers, ContainerInfo{
+				Container: c,
+				Role:      acc.Name,
+			})
+		}
+	}
 }
 
 func (gui *ServerGUI) renderStatus(g *gocui.Gui) {
@@ -521,6 +609,49 @@ func (gui *ServerGUI) keybindings(g *gocui.Gui) error {
 		return err
 	}
 
+	// Container actions (in container select screen)
+	if err := g.SetKeybinding("", 'l', gocui.ModNone, gui.keyContainerLogs); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", 's', gocui.ModNone, gui.keyContainerStop); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", 'S', gocui.ModNone, gui.keyContainerStart); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (gui *ServerGUI) keyContainerLogs(g *gocui.Gui, v *gocui.View) error {
+	if gui.screen != ServerScreenContainerSelect {
+		return nil
+	}
+	if gui.selectedContainer < len(gui.allContainers) {
+		gui.viewContainerLogs(gui.allContainers[gui.selectedContainer])
+	}
+	return nil
+}
+
+func (gui *ServerGUI) keyContainerStop(g *gocui.Gui, v *gocui.View) error {
+	if gui.screen != ServerScreenContainerSelect {
+		return nil
+	}
+	if gui.selectedContainer < len(gui.allContainers) {
+		ci := gui.allContainers[gui.selectedContainer]
+		gui.stopContainer(ci)
+	}
+	return nil
+}
+
+func (gui *ServerGUI) keyContainerStart(g *gocui.Gui, v *gocui.View) error {
+	if gui.screen != ServerScreenContainerSelect {
+		return nil
+	}
+	if gui.selectedContainer < len(gui.allContainers) {
+		ci := gui.allContainers[gui.selectedContainer]
+		gui.startContainer(ci)
+	}
 	return nil
 }
 
@@ -532,12 +663,16 @@ func (gui *ServerGUI) keyDown(g *gocui.Gui, v *gocui.View) error {
 		}
 	case ServerScreenAppMenu:
 		gui.selectedItem++
-		// Skip separator lines
-		if gui.selectedItem == 5 || gui.selectedItem == 7 {
+		// Skip separator lines (indices 1 and 6)
+		if gui.selectedItem == 1 || gui.selectedItem == 6 {
 			gui.selectedItem++
 		}
-		if gui.selectedItem > 8 {
-			gui.selectedItem = 8
+		if gui.selectedItem > 7 {
+			gui.selectedItem = 7
+		}
+	case ServerScreenContainerSelect:
+		if gui.selectedContainer < len(gui.allContainers)-1 {
+			gui.selectedContainer++
 		}
 	}
 	return nil
@@ -551,12 +686,16 @@ func (gui *ServerGUI) keyUp(g *gocui.Gui, v *gocui.View) error {
 		}
 	case ServerScreenAppMenu:
 		gui.selectedItem--
-		// Skip separator lines
-		if gui.selectedItem == 5 || gui.selectedItem == 7 {
+		// Skip separator lines (indices 1 and 6)
+		if gui.selectedItem == 1 || gui.selectedItem == 6 {
 			gui.selectedItem--
 		}
 		if gui.selectedItem < 0 {
 			gui.selectedItem = 0
+		}
+	case ServerScreenContainerSelect:
+		if gui.selectedContainer > 0 {
+			gui.selectedContainer--
 		}
 	}
 	return nil
@@ -571,6 +710,11 @@ func (gui *ServerGUI) keyEnter(g *gocui.Gui, v *gocui.View) error {
 		}
 	case ServerScreenAppMenu:
 		gui.executeAppAction()
+	case ServerScreenContainerSelect:
+		// Enter on container shows its logs by default
+		if gui.selectedContainer < len(gui.allContainers) {
+			gui.viewContainerLogs(gui.allContainers[gui.selectedContainer])
+		}
 	case ServerScreenHelp:
 		gui.screen = ServerScreenApps
 		g.DeleteView(viewHelp)
@@ -580,6 +724,10 @@ func (gui *ServerGUI) keyEnter(g *gocui.Gui, v *gocui.View) error {
 
 func (gui *ServerGUI) keyBack(g *gocui.Gui, v *gocui.View) error {
 	switch gui.screen {
+	case ServerScreenContainerSelect:
+		gui.screen = ServerScreenAppMenu
+		gui.selectedContainer = 0
+		gui.allContainers = nil
 	case ServerScreenAppMenu:
 		gui.screen = ServerScreenApps
 		gui.selectedItem = 0
@@ -591,6 +739,16 @@ func (gui *ServerGUI) keyBack(g *gocui.Gui, v *gocui.View) error {
 }
 
 func (gui *ServerGUI) keyRefresh(g *gocui.Gui, v *gocui.View) error {
+	// In container select screen, 'r' restarts the selected container
+	if gui.screen == ServerScreenContainerSelect {
+		if gui.selectedContainer < len(gui.allContainers) {
+			ci := gui.allContainers[gui.selectedContainer]
+			gui.restartContainer(ci)
+		}
+		return nil
+	}
+
+	// Otherwise, refresh apps
 	gui.logInfo("Refreshing apps...")
 	go func() {
 		apps, err := docker.DiscoverApps(gui.client)
@@ -602,6 +760,22 @@ func (gui *ServerGUI) keyRefresh(g *gocui.Gui, v *gocui.View) error {
 		gui.logSuccess(fmt.Sprintf("Found %d app(s)", len(apps)))
 	}()
 	return nil
+}
+
+func (gui *ServerGUI) restartContainer(ci ContainerInfo) {
+	gui.logInfo(fmt.Sprintf("Restarting %s...", ci.Container.Name))
+	gui.running = true
+	gui.runningCmd = "Restart"
+	gui.cmdStartTime = time.Now()
+
+	go func() {
+		if err := docker.RestartContainer(gui.client, ci.Container.ID); err != nil {
+			gui.logError(fmt.Sprintf("Failed to restart %s: %s", ci.Container.Name, err.Error()))
+		} else {
+			gui.logSuccess(fmt.Sprintf("Restarted %s", ci.Container.Name))
+		}
+		gui.running = false
+	}()
 }
 
 func (gui *ServerGUI) keyHelp(g *gocui.Gui, v *gocui.View) error {
@@ -643,36 +817,62 @@ func (gui *ServerGUI) executeAppAction() {
 	}
 	app := gui.apps[gui.selectedApp]
 
+	// Menu: Select Container, ---, View All Logs, Restart All, Stop All, Start All, ---, Back
+	// Indices: 0, 1 (sep), 2, 3, 4, 5, 6 (sep), 7
 	switch gui.selectedItem {
-	case 0: // View Logs
+	case 0: // Select Container...
+		gui.screen = ServerScreenContainerSelect
+		gui.selectedContainer = 0
+		gui.buildContainerList()
+	case 2: // View All Logs
 		gui.viewAppLogs(app)
-	case 1: // View Containers
-		gui.viewContainers(app)
-	case 2: // Restart App
+	case 3: // Restart All
 		gui.restartApp(app)
-	case 3: // Stop App
+	case 4: // Stop All
 		gui.stopApp(app)
-	case 4: // Start App
+	case 5: // Start All
 		gui.startApp(app)
-	case 6: // View Accessories
-		gui.viewAccessories(app)
-	case 8: // Back
+	case 7: // Back
 		gui.screen = ServerScreenApps
 		gui.selectedItem = 0
 	}
 }
 
 func (gui *ServerGUI) viewAppLogs(app docker.App) {
-	if len(app.Containers) == 0 {
+	// View logs from all containers (web + accessories)
+	allContainers := app.Containers
+	for _, acc := range app.Accessories {
+		allContainers = append(allContainers, acc.Containers...)
+	}
+
+	if len(allContainers) == 0 {
 		gui.logError("No containers to view logs from")
 		return
 	}
 
-	container := app.Containers[0]
-	gui.logInfo(fmt.Sprintf("Fetching logs for %s...", container.Name))
+	gui.logInfo(fmt.Sprintf("Fetching logs from %d container(s)...", len(allContainers)))
 
 	go func() {
-		output, err := docker.GetContainerLogs(gui.client, container.ID, 100, false)
+		for _, container := range allContainers {
+			output, err := docker.GetContainerLogs(gui.client, container.ID, 50, false)
+			if err != nil {
+				gui.logError(fmt.Sprintf("Failed to get logs from %s: %s", container.Name, err.Error()))
+				continue
+			}
+
+			gui.appendLog([]string{fmt.Sprintf("─── %s ───", container.Name)})
+			lines := splitLines(output)
+			gui.appendLog(lines)
+		}
+		gui.logSuccess("Fetched logs from all containers")
+	}()
+}
+
+func (gui *ServerGUI) viewContainerLogs(ci ContainerInfo) {
+	gui.logInfo(fmt.Sprintf("Fetching logs for %s [%s]...", ci.Container.Name, ci.Role))
+
+	go func() {
+		output, err := docker.GetContainerLogs(gui.client, ci.Container.ID, 100, false)
 		if err != nil {
 			gui.logError("Failed to get logs: " + err.Error())
 			return
@@ -680,7 +880,39 @@ func (gui *ServerGUI) viewAppLogs(app docker.App) {
 
 		lines := splitLines(output)
 		gui.appendLog(lines)
-		gui.logSuccess(fmt.Sprintf("Fetched %d log lines", len(lines)))
+		gui.logSuccess(fmt.Sprintf("Fetched %d log lines from %s", len(lines), ci.Container.Name))
+	}()
+}
+
+func (gui *ServerGUI) stopContainer(ci ContainerInfo) {
+	gui.logInfo(fmt.Sprintf("Stopping %s...", ci.Container.Name))
+	gui.running = true
+	gui.runningCmd = "Stop"
+	gui.cmdStartTime = time.Now()
+
+	go func() {
+		if err := docker.StopContainer(gui.client, ci.Container.ID); err != nil {
+			gui.logError(fmt.Sprintf("Failed to stop %s: %s", ci.Container.Name, err.Error()))
+		} else {
+			gui.logSuccess(fmt.Sprintf("Stopped %s", ci.Container.Name))
+		}
+		gui.running = false
+	}()
+}
+
+func (gui *ServerGUI) startContainer(ci ContainerInfo) {
+	gui.logInfo(fmt.Sprintf("Starting %s...", ci.Container.Name))
+	gui.running = true
+	gui.runningCmd = "Start"
+	gui.cmdStartTime = time.Now()
+
+	go func() {
+		if err := docker.StartContainer(gui.client, ci.Container.ID); err != nil {
+			gui.logError(fmt.Sprintf("Failed to start %s: %s", ci.Container.Name, err.Error()))
+		} else {
+			gui.logSuccess(fmt.Sprintf("Started %s", ci.Container.Name))
+		}
+		gui.running = false
 	}()
 }
 
