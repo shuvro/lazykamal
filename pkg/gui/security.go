@@ -123,15 +123,15 @@ func validateCwd(path string) error {
 	// Check for symlink attacks
 	if isSymlink(path) {
 		// Resolve the symlink and use the real path
-		realPath, err := filepath.EvalSymlinks(path)
-		if err != nil {
-			return fmt.Errorf("cannot resolve symlink: %w", err)
+		realPath, evalErr := filepath.EvalSymlinks(path)
+		if evalErr != nil {
+			return fmt.Errorf("cannot resolve symlink: %w", evalErr)
 		}
-		info, err = os.Stat(realPath)
-		if err != nil {
+		targetInfo, statErr := os.Stat(realPath)
+		if statErr != nil {
 			return fmt.Errorf("symlink target does not exist: %s", realPath)
 		}
-		if !info.IsDir() {
+		if !targetInfo.IsDir() {
 			return fmt.Errorf("symlink target is not a directory: %s", realPath)
 		}
 	}
