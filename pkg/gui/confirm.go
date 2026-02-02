@@ -116,23 +116,6 @@ func (gui *GUI) closeConfirm() {
 	gui.g.SetCurrentView(viewMain)
 }
 
-// isDestructiveAction returns true if the action is destructive
-func isDestructiveAction(screen Screen, idx int) bool {
-	switch screen {
-	case ScreenDeploy:
-		return idx == 3 // Rollback
-	case ScreenApp:
-		return idx == 2 || idx == 13 // Stop, Remove
-	case ScreenAccessory:
-		return idx == 2 || idx == 5 // Stop all, Remove all
-	case ScreenProxy:
-		return idx == 2 || idx == 8 // Stop, Remove
-	case ScreenOther:
-		return idx == 0 || idx == 8 || idx == 14 // Prune, Lock release --force, Env delete
-	}
-	return false
-}
-
 // getDestructiveMessage returns a warning message for destructive actions
 func getDestructiveMessage(screen Screen, idx int) string {
 	switch screen {

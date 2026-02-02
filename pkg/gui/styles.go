@@ -113,39 +113,8 @@ func timestampedLine(line string) string {
 	return dim(formatTimestamp(time.Now())) + " " + line
 }
 
-// MenuItem represents a styled menu item
-type MenuItem struct {
-	Label       string
-	Icon        string
-	Destructive bool // If true, shown in red
-	Disabled    bool
-}
-
-// FormatMenuItem formats a menu item with icon and color
-func formatMenuItem(item MenuItem, selected bool) string {
-	prefix := "  "
-	if selected {
-		prefix = cyan(iconArrow) + " "
-	}
-
-	label := item.Label
-	if item.Icon != "" {
-		label = item.Icon + " " + label
-	}
-
-	if item.Destructive {
-		label = red(label)
-	}
-
-	if item.Disabled {
-		label = dim(label)
-	}
-
-	return prefix + label
-}
-
 // ProgressBar creates a simple progress bar
-func progressBar(percent int, width int) string {
+func progressBar(percent, width int) string {
 	if percent < 0 {
 		percent = 0
 	}
@@ -160,35 +129,9 @@ func progressBar(percent int, width int) string {
 	return fmt.Sprintf("[%s] %d%%", bar, percent)
 }
 
-// Box drawing characters for better UI
-const (
-	boxHorizontal    = "─"
-	boxVertical      = "│"
-	boxTopLeft       = "┌"
-	boxTopRight      = "┐"
-	boxBottomLeft    = "└"
-	boxBottomRight   = "┘"
-	boxVerticalRight = "├"
-	boxVerticalLeft  = "┤"
-	boxHorizontalUp  = "┴"
-	boxHorizontalDown = "┬"
-	boxCross         = "┼"
-	boxDoubleH       = "═"
-	boxDoubleV       = "║"
-)
-
 // Separator creates a horizontal separator line
 func separator(width int, char string) string {
 	return strings.Repeat(char, width)
-}
-
-// SectionHeader creates a styled section header
-func sectionHeader(title string, width int) string {
-	if width < len(title)+4 {
-		return title
-	}
-	padding := (width - len(title) - 2) / 2
-	return strings.Repeat(boxHorizontal, padding) + " " + bold(title) + " " + strings.Repeat(boxHorizontal, width-padding-len(title)-2)
 }
 
 // Truncate truncates a string to max length with ellipsis

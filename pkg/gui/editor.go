@@ -15,14 +15,14 @@ const viewEditorStatus = "editorStatus"
 
 // Editor state: nano/vi-style in-TUI modal.
 type editorState struct {
-	Path         string
-	Lines        []string
-	Row          int
-	Col          int
-	Scroll       int
-	Dirty        bool
-	PrevScreen   Screen
-	ConfirmQuit  bool // show "Quit without saving? (y/n)"
+	Path        string
+	Lines       []string
+	Row         int
+	Col         int
+	Scroll      int
+	Dirty       bool
+	PrevScreen  Screen
+	ConfirmQuit bool // show "Quit without saving? (y/n)"
 }
 
 func (gui *GUI) openEditor(path string) bool {

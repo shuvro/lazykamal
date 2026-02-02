@@ -3,7 +3,6 @@ package gui
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -76,25 +75,25 @@ func (s Screen) String() string {
 
 // GUI holds TUI state.
 type GUI struct {
-	g             *gocui.Gui
-	cwd           string
-	version       string
-	destinations  []kamal.DeployDestination
-	selectedApp   int
-	screen        Screen
-	prevScreen    Screen
-	submenuIdx    int
-	logLines      []string
-	logMu         sync.Mutex
-	statusText    string
-	statusMu      sync.Mutex
-	running       bool
-	runningCmd    string
-	cmdStartTime  time.Time
-	maxX          int
-	maxY          int
-	statusStopCh  chan struct{}
-	statusTicker  *time.Ticker
+	g              *gocui.Gui
+	cwd            string
+	version        string
+	destinations   []kamal.DeployDestination
+	selectedApp    int
+	screen         Screen
+	prevScreen     Screen
+	submenuIdx     int
+	logLines       []string
+	logMu          sync.Mutex
+	statusText     string
+	statusMu       sync.Mutex
+	running        bool
+	runningCmd     string
+	cmdStartTime   time.Time
+	maxX           int
+	maxY           int
+	statusStopCh   chan struct{}
+	statusTicker   *time.Ticker
 	liveLogsStop   chan struct{}
 	liveLogsActive bool
 	liveLogsMu     sync.Mutex
@@ -126,17 +125,17 @@ func New(version ...string) (*GUI, error) {
 	gui := &GUI{
 		stdinFd:        stdinFd,
 		savedTermState: savedState,
-		g:            g,
-		cwd:          cwd,
-		version:      ver,
-		selectedApp:  0,
-		screen:       ScreenApps,
-		submenuIdx:   0,
-		logLines:     make([]string, 0, logBufLive),
-		statusStopCh: make(chan struct{}),
-		liveLogsStop: make(chan struct{}),
-		maxX:         80,
-		maxY:        24,
+		g:              g,
+		cwd:            cwd,
+		version:        ver,
+		selectedApp:    0,
+		screen:         ScreenApps,
+		submenuIdx:     0,
+		logLines:       make([]string, 0, logBufLive),
+		statusStopCh:   make(chan struct{}),
+		liveLogsStop:   make(chan struct{}),
+		maxX:           80,
+		maxY:           24,
 	}
 	gui.destinations, _ = kamal.FindDeployConfigs(gui.cwd)
 	if len(gui.destinations) == 0 {
@@ -196,8 +195,8 @@ func (gui *GUI) layout(g *gocui.Gui) error {
 	// Breadcrumb navigation
 	breadcrumb := gui.getBreadcrumb()
 
-	fmt.Fprintf(header, " %s %s %s | %s |%s\n", 
-		cyan(iconRocket), bold("Lazykamal"), dim(gui.version), 
+	fmt.Fprintf(header, " %s %s %s | %s |%s\n",
+		cyan(iconRocket), bold("Lazykamal"), dim(gui.version),
 		breadcrumb, statusIndicator)
 
 	// Left panel: apps / menu (about 40% width)
@@ -261,7 +260,7 @@ const viewHelp = "help"
 
 func (gui *GUI) renderHelpOverlay(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
-	
+
 	// Center the help overlay
 	width := 60
 	height := 22
@@ -289,7 +288,7 @@ func (gui *GUI) renderHelpOverlay(g *gocui.Gui) error {
 		return nil
 	}
 	v.Clear()
-	
+
 	help := `
  KEYBOARD SHORTCUTS
  ══════════════════════════════════════════════
@@ -660,16 +659,6 @@ func (gui *GUI) appendLog(lines []string) {
 	}
 }
 
-// appendLogRaw appends lines without timestamp (for continued output)
-func (gui *GUI) appendLogRaw(lines []string) {
-	gui.logMu.Lock()
-	defer gui.logMu.Unlock()
-	gui.logLines = append(gui.logLines, lines...)
-	if len(gui.logLines) > logBufLive {
-		gui.logLines = gui.logLines[len(gui.logLines)-logBufLive:]
-	}
-}
-
 // logSuccess appends a success message
 func (gui *GUI) logSuccess(msg string) {
 	gui.appendLog([]string{statusLine("success", msg)})
@@ -683,11 +672,6 @@ func (gui *GUI) logError(msg string) {
 // logInfo appends an info message
 func (gui *GUI) logInfo(msg string) {
 	gui.appendLog([]string{statusLine("info", msg)})
-}
-
-// logWarning appends a warning message
-func (gui *GUI) logWarning(msg string) {
-	gui.appendLog([]string{statusLine("warning", msg)})
 }
 
 func (gui *GUI) appendLogFromResult(r kamal.Result) {
@@ -748,62 +732,6 @@ func (gui *GUI) stopLiveLogs() {
 	}
 	close(gui.liveLogsStop)
 	gui.liveLogsActive = false
-}
-
-// runEditor opens path in $EDITOR (or nano/vim). Restores terminal to cooked mode,
-// runs the editor, then restores raw mode so the TUI continues.
-// If no editor is available (e.g. running on a server without nano/vim) or not a TTY,
-// it appends the file path to the log so you can edit elsewhere (e.g. locally and scp back).
-func (gui *GUI) runEditor(path string) bool {
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = os.Getenv("VISUAL")
-	}
-	if editor == "" {
-		if p, err := exec.LookPath("nano"); err == nil {
-			editor = p
-		} else if p, err := exec.LookPath("vim"); err == nil {
-			editor = p
-		} else if p, err := exec.LookPath("vi"); err == nil {
-			editor = p
-		}
-	}
-	if editor == "" {
-		gui.appendLog([]string{
-			"No editor found (set EDITOR or install nano/vim).",
-			"Edit the file elsewhere and save, then use Redeploy or App restart:",
-			"  " + path,
-		})
-		return false
-	}
-	// Not a TTY (e.g. no terminal when SSH non-interactive) – can't run an interactive editor
-	if gui.savedTermState == nil {
-		gui.appendLog([]string{
-			"Not a terminal; cannot run an interactive editor.",
-			"Edit the file on your machine and re-upload, then Redeploy or App restart:",
-			"  " + path,
-		})
-		return false
-	}
-	rawState, err := term.GetState(gui.stdinFd)
-	if err != nil {
-		gui.appendLog([]string{"Could not save terminal state: " + err.Error(), "File: " + path})
-		return false
-	}
-	defer term.Restore(gui.stdinFd, rawState)
-	if err := term.Restore(gui.stdinFd, gui.savedTermState); err != nil {
-		gui.appendLog([]string{"Could not restore terminal for editor: " + err.Error(), "File: " + path})
-		return false
-	}
-	cmd := exec.Command(editor, path)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		gui.appendLog([]string{"Editor exited: " + err.Error()})
-		return false
-	}
-	return true
 }
 
 func (gui *GUI) execConfig() {
@@ -1238,15 +1166,15 @@ func (gui *GUI) runCommand(name string, fn func() (kamal.Result, error)) {
 	gui.running = true
 	gui.runningCmd = name
 	gui.cmdStartTime = time.Now()
-	
+
 	// Start spinner
 	gui.spinner = NewSpinner(name, func() {
 		gui.g.Update(func(*gocui.Gui) error { return nil })
 	})
 	gui.spinner.Start()
-	
+
 	gui.logInfo("Running: " + name)
-	
+
 	go func() {
 		defer func() {
 			gui.spinner.Stop()
@@ -1255,18 +1183,18 @@ func (gui *GUI) runCommand(name string, fn func() (kamal.Result, error)) {
 			gui.runningCmd = ""
 			gui.g.Update(func(*gocui.Gui) error { return nil })
 		}()
-		
+
 		res, err := fn()
 		duration := time.Since(gui.cmdStartTime)
-		
+
 		if err != nil {
 			gui.logError(fmt.Sprintf("%s failed: %s", name, err.Error()))
 			return
 		}
-		
+
 		// Log output
 		gui.appendLogFromResult(res)
-		
+
 		// Log completion with duration
 		if res.ExitCode == 0 {
 			gui.logSuccess(fmt.Sprintf("%s completed in %s", name, formatDuration(duration)))
@@ -1288,7 +1216,7 @@ func (gui *GUI) execDeploy() {
 	opts := gui.runOpts()
 	var fn func() (kamal.Result, error)
 	var name string
-	
+
 	switch gui.submenuIdx {
 	case 0:
 		name = "Deploy"
@@ -1310,7 +1238,7 @@ func (gui *GUI) execDeploy() {
 	default:
 		return
 	}
-	
+
 	gui.runCommand(name, fn)
 }
 
@@ -1319,7 +1247,7 @@ func (gui *GUI) execApp() {
 	var fn func() (kamal.Result, error)
 	var name string
 	needsConfirm := false
-	
+
 	switch gui.submenuIdx {
 	case 0:
 		name = "App Boot"
@@ -1371,7 +1299,7 @@ func (gui *GUI) execApp() {
 	default:
 		return
 	}
-	
+
 	if needsConfirm {
 		gui.runWithConfirm(name, getDestructiveMessage(gui.screen, gui.submenuIdx), fn)
 	} else {
@@ -1383,7 +1311,7 @@ func (gui *GUI) execServer() {
 	opts := gui.runOpts()
 	var fn func() (kamal.Result, error)
 	var name string
-	
+
 	switch gui.submenuIdx {
 	case 0:
 		name = "Server Bootstrap"
@@ -1397,7 +1325,7 @@ func (gui *GUI) execServer() {
 	default:
 		return
 	}
-	
+
 	gui.runCommand(name, fn)
 }
 
@@ -1406,7 +1334,7 @@ func (gui *GUI) execAccessory() {
 	var fn func() (kamal.Result, error)
 	var name string
 	needsConfirm := false
-	
+
 	switch gui.submenuIdx {
 	case 0:
 		name = "Accessory Boot All"
@@ -1440,7 +1368,7 @@ func (gui *GUI) execAccessory() {
 	default:
 		return
 	}
-	
+
 	if needsConfirm {
 		gui.runWithConfirm(name, getDestructiveMessage(gui.screen, gui.submenuIdx), fn)
 	} else {
@@ -1453,7 +1381,7 @@ func (gui *GUI) execProxy() {
 	var fn func() (kamal.Result, error)
 	var name string
 	needsConfirm := false
-	
+
 	switch gui.submenuIdx {
 	case 0:
 		name = "Proxy Boot"
@@ -1499,7 +1427,7 @@ func (gui *GUI) execProxy() {
 	default:
 		return
 	}
-	
+
 	if needsConfirm {
 		gui.runWithConfirm(name, getDestructiveMessage(gui.screen, gui.submenuIdx), fn)
 	} else {
@@ -1512,7 +1440,7 @@ func (gui *GUI) execOther() {
 	var fn func() (kamal.Result, error)
 	var name string
 	needsConfirm := false
-	
+
 	switch gui.submenuIdx {
 	case 0:
 		name = "Prune"
@@ -1580,7 +1508,7 @@ func (gui *GUI) execOther() {
 	default:
 		return
 	}
-	
+
 	if needsConfirm {
 		gui.runWithConfirm(name, getDestructiveMessage(gui.screen, gui.submenuIdx), fn)
 	} else {

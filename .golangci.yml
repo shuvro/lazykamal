@@ -21,11 +21,18 @@ linters-settings:
       - fmt.Fprint
       - fmt.Fprintf
       - fmt.Fprintln
+      - (*github.com/jroimartin/gocui.Gui).SetCurrentView
+      - (*github.com/jroimartin/gocui.Gui).DeleteView
+      - (*github.com/jroimartin/gocui.View).SetCursor
       - (github.com/jroimartin/gocui.Gui).SetCurrentView
       - (github.com/jroimartin/gocui.Gui).DeleteView
       - (github.com/jroimartin/gocui.View).SetCursor
       - (*os/exec.Cmd).Wait
       - os.Remove
+      - (*golang.org/x/term).Restore
+      - (golang.org/x/term).Restore
+      - (*os.File).Close
+      - (io.Closer).Close
   govet:
     enable-all: true
     disable:
@@ -36,6 +43,11 @@ linters-settings:
       - style
     disabled-checks:
       - hugeParam # TUI structs can be large
+      - octalLiteral # 0644 is more readable than 0o644 for file permissions
+      - ifElseChain # Sometimes if-else is clearer than switch
+      - paramTypeCombine # Explicit types can be more readable
+      - commentedOutCode # Allow commented code for reference
+      - appendAssign # False positive in some patterns
 
 issues:
   exclude-use-default: false

@@ -292,10 +292,10 @@ func Upgrade(opts RunOptions) (Result, error) {
 
 // App subcommands
 func AppBoot(opts RunOptions) (Result, error)    { return RunKamal([]string{"app", "boot"}, opts) }
-func AppStart(opts RunOptions) (Result, error)     { return RunKamal([]string{"app", "start"}, opts) }
-func AppStop(opts RunOptions) (Result, error)      { return RunKamal([]string{"app", "stop"}, opts) }
-func AppRestart(opts RunOptions) (Result, error)   { return RunKamal([]string{"app", "restart"}, opts) }
-func AppLogs(opts RunOptions) (Result, error)      { return RunKamal([]string{"app", "logs"}, opts) }
+func AppStart(opts RunOptions) (Result, error)   { return RunKamal([]string{"app", "start"}, opts) }
+func AppStop(opts RunOptions) (Result, error)    { return RunKamal([]string{"app", "stop"}, opts) }
+func AppRestart(opts RunOptions) (Result, error) { return RunKamal([]string{"app", "restart"}, opts) }
+func AppLogs(opts RunOptions) (Result, error)    { return RunKamal([]string{"app", "logs"}, opts) }
 func AppContainers(opts RunOptions) (Result, error) {
 	return RunKamal([]string{"app", "containers"}, opts)
 }
@@ -359,18 +359,22 @@ func AccessoryUpgrade(opts RunOptions) (Result, error) {
 }
 
 // Proxy subcommands
-func ProxyBoot(opts RunOptions) (Result, error)    { return RunKamal([]string{"proxy", "boot"}, opts) }
-func ProxyStart(opts RunOptions) (Result, error)  { return RunKamal([]string{"proxy", "start"}, opts) }
-func ProxyStop(opts RunOptions) (Result, error)   { return RunKamal([]string{"proxy", "stop"}, opts) }
-func ProxyRestart(opts RunOptions) (Result, error) { return RunKamal([]string{"proxy", "restart"}, opts) }
+func ProxyBoot(opts RunOptions) (Result, error)  { return RunKamal([]string{"proxy", "boot"}, opts) }
+func ProxyStart(opts RunOptions) (Result, error) { return RunKamal([]string{"proxy", "start"}, opts) }
+func ProxyStop(opts RunOptions) (Result, error)  { return RunKamal([]string{"proxy", "stop"}, opts) }
+func ProxyRestart(opts RunOptions) (Result, error) {
+	return RunKamal([]string{"proxy", "restart"}, opts)
+}
 func ProxyReboot(opts RunOptions, rolling bool) (Result, error) {
 	if rolling {
 		return RunKamal([]string{"proxy", "reboot", "--rolling"}, opts)
 	}
 	return RunKamal([]string{"proxy", "reboot"}, opts)
 }
-func ProxyLogs(opts RunOptions) (Result, error)   { return RunKamal([]string{"proxy", "logs"}, opts) }
-func ProxyDetails(opts RunOptions) (Result, error) { return RunKamal([]string{"proxy", "details"}, opts) }
+func ProxyLogs(opts RunOptions) (Result, error) { return RunKamal([]string{"proxy", "logs"}, opts) }
+func ProxyDetails(opts RunOptions) (Result, error) {
+	return RunKamal([]string{"proxy", "details"}, opts)
+}
 func ProxyRemove(opts RunOptions) (Result, error) { return RunKamal([]string{"proxy", "remove"}, opts) }
 
 // ProxyBootConfigGet/Set/Reset (deprecated in favor of proxy run config; still available in Kamal).
