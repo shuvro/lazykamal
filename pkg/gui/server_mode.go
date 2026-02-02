@@ -281,25 +281,32 @@ func (gui *ServerGUI) renderAppMenu(v *gocui.View) {
 	v.Title = fmt.Sprintf(" %s (%s) ", app.Service, app.Destination)
 
 	// Menu structure mirrors Kamal commands
-	// 0: Containers, 1: sep, 2: Logs, 3: Details, 4: sep, 5: Boot, 6: Start, 7: Stop, 8: Restart
-	// 9: sep, 10: Exec, 11: sep, 12: Proxy, 13: sep, 14: Back
+	// Comprehensive menu matching all Kamal app/proxy commands
 	menuItems := []string{
 		"Containers...",    // 0 - Select and manage individual containers
 		"─── App ───",      // 1 - separator
 		"Logs (streaming)", // 2 - Live logs
 		"Details",          // 3 - Show container details
-		"─── Actions ───",  // 4 - separator
-		"Boot / Reboot",    // 5 - Restart all containers
-		"Start",            // 6 - Start all containers
-		"Stop",             // 7 - Stop all containers
-		"Restart",          // 8 - Restart all containers
-		"─── Commands ───", // 9 - separator
-		"Exec (shell)",     // 10 - Execute shell in container
-		"─── Proxy ───",    // 11 - separator
-		"Proxy Logs",       // 12 - View proxy logs
-		"Proxy Details",    // 13 - Proxy container details
-		"───────────────", // 14 - separator
-		"Back", // 15 - Go back
+		"Images",           // 4 - Show container images
+		"Version",          // 5 - Show app version
+		"Health",           // 6 - Check container health
+		"─── Actions ───",  // 7 - separator
+		"Boot / Reboot",    // 8 - Restart all containers
+		"Start",            // 9 - Start all containers
+		"Stop",             // 10 - Stop all containers
+		"Restart",          // 11 - Restart all containers
+		"Remove",           // 12 - Remove stopped containers
+		"─── Commands ───", // 13 - separator
+		"Exec (shell)",     // 14 - Execute shell in container
+		"─── Proxy ───",    // 15 - separator
+		"Proxy Logs",       // 16 - View proxy logs
+		"Proxy Details",    // 17 - Proxy container details
+		"Proxy Restart",    // 18 - Restart proxy
+		"Proxy Reboot",     // 19 - Reboot proxy (stop + start)
+		"Proxy Stop",       // 20 - Stop proxy
+		"Proxy Start",      // 21 - Start proxy
+		"───────────────",  // 22 - separator
+		"Back",             // 23 - Go back
 	}
 
 	// Track actual selectable items (skip separators)
@@ -318,7 +325,7 @@ func (gui *ServerGUI) renderAppMenu(v *gocui.View) {
 
 		// Color destructive actions
 		displayItem := item
-		if item == "Stop" {
+		if item == "Stop" || item == "Remove" || item == "Proxy Stop" {
 			displayItem = red(item)
 		}
 
@@ -843,8 +850,10 @@ func (gui *ServerGUI) executeAppAction() {
 	app := gui.apps[gui.selectedApp]
 
 	// Selectable menu items (excluding separators):
-	// 0: Containers..., 1: Logs, 2: Details, 3: Boot/Reboot, 4: Start, 5: Stop, 6: Restart
-	// 7: Exec, 8: Proxy Logs, 9: Proxy Details, 10: Back
+	// 0: Containers, 1: Logs, 2: Details, 3: Images, 4: Version, 5: Health
+	// 6: Boot/Reboot, 7: Start, 8: Stop, 9: Restart, 10: Remove
+	// 11: Exec, 12: Proxy Logs, 13: Proxy Details, 14: Proxy Restart, 15: Proxy Reboot
+	// 16: Proxy Stop, 17: Proxy Start, 18: Back
 	switch gui.selectedItem {
 	case 0: // Containers...
 		gui.screen = ServerScreenContainerSelect
@@ -854,21 +863,37 @@ func (gui *ServerGUI) executeAppAction() {
 		gui.viewAppLogs(app)
 	case 2: // Details
 		gui.showAppDetails(app)
-	case 3: // Boot / Reboot
+	case 3: // Images
+		gui.showAppImages(app)
+	case 4: // Version
+		gui.showAppVersion(app)
+	case 5: // Health
+		gui.showAppHealth(app)
+	case 6: // Boot / Reboot
 		gui.rebootApp(app)
-	case 4: // Start
+	case 7: // Start
 		gui.startApp(app)
-	case 5: // Stop
+	case 8: // Stop
 		gui.stopApp(app)
-	case 6: // Restart
+	case 9: // Restart
 		gui.restartApp(app)
-	case 7: // Exec (shell)
+	case 10: // Remove
+		gui.removeStoppedContainers(app)
+	case 11: // Exec (shell)
 		gui.execShell(app)
-	case 8: // Proxy Logs
+	case 12: // Proxy Logs
 		gui.viewProxyLogs()
-	case 9: // Proxy Details
+	case 13: // Proxy Details
 		gui.showProxyDetails()
-	case 10: // Back
+	case 14: // Proxy Restart
+		gui.proxyRestart()
+	case 15: // Proxy Reboot
+		gui.proxyReboot()
+	case 16: // Proxy Stop
+		gui.proxyStop()
+	case 17: // Proxy Start
+		gui.proxyStart()
+	case 18: // Back
 		gui.screen = ServerScreenApps
 		gui.selectedItem = 0
 	}
@@ -1172,6 +1197,231 @@ func (gui *ServerGUI) showProxyDetails() {
 			}
 		}
 		gui.logSuccess("Proxy details fetched")
+	}()
+}
+
+// --- New App Commands ---
+
+func (gui *ServerGUI) showAppImages(app docker.App) {
+	gui.logInfo(fmt.Sprintf("=== %s Images ===", app.Service))
+
+	go func() {
+		allContainers := app.Containers
+		for _, acc := range app.Accessories {
+			allContainers = append(allContainers, acc.Containers...)
+		}
+
+		// Collect unique images
+		images := make(map[string]bool)
+		for _, c := range allContainers {
+			images[c.Image] = true
+		}
+
+		for image := range images {
+			// Get image details
+			cmd := fmt.Sprintf("docker images --format 'ID: {{.ID}} | Size: {{.Size}} | Created: {{.CreatedSince}}' %s", image)
+			output, err := gui.client.Run(cmd)
+			if err != nil {
+				gui.appendLog([]string{fmt.Sprintf("  %s: error - %s", image, err.Error())})
+				continue
+			}
+			gui.appendLog([]string{fmt.Sprintf("  %s", image)})
+			gui.appendLog([]string{fmt.Sprintf("    %s", strings.TrimSpace(output))})
+		}
+		gui.logSuccess("Images fetched")
+	}()
+}
+
+func (gui *ServerGUI) showAppVersion(app docker.App) {
+	gui.logInfo(fmt.Sprintf("=== %s Version ===", app.Service))
+
+	version := docker.GetAppVersion(app.Containers)
+	gui.appendLog([]string{fmt.Sprintf("  Service: %s", app.Service)})
+	gui.appendLog([]string{fmt.Sprintf("  Destination: %s", app.Destination)})
+	gui.appendLog([]string{fmt.Sprintf("  Version: %s", version)})
+
+	// Show version from labels if available
+	if len(app.Containers) > 0 {
+		c := app.Containers[0]
+		if v, ok := c.Labels["version"]; ok {
+			gui.appendLog([]string{fmt.Sprintf("  Label version: %s", v)})
+		}
+		gui.appendLog([]string{fmt.Sprintf("  Image: %s", c.Image)})
+	}
+}
+
+func (gui *ServerGUI) showAppHealth(app docker.App) {
+	gui.logInfo(fmt.Sprintf("=== %s Health ===", app.Service))
+
+	go func() {
+		allContainers := app.Containers
+		for _, acc := range app.Accessories {
+			allContainers = append(allContainers, acc.Containers...)
+		}
+
+		for _, c := range allContainers {
+			// Check container health status
+			cmd := fmt.Sprintf("docker inspect --format '{{.State.Status}} | Health: {{if .State.Health}}{{.State.Health.Status}}{{else}}no healthcheck{{end}} | Restarts: {{.RestartCount}}' %s", c.ID)
+			output, err := gui.client.Run(cmd)
+			if err != nil {
+				gui.appendLog([]string{fmt.Sprintf("  %s: error - %s", c.Name, err.Error())})
+				continue
+			}
+
+			status := "●"
+			if c.State == "running" {
+				status = green("●")
+			} else {
+				status = red("●")
+			}
+			gui.appendLog([]string{fmt.Sprintf("  %s %s: %s", status, c.Name, strings.TrimSpace(output))})
+		}
+		gui.logSuccess("Health check completed")
+	}()
+}
+
+func (gui *ServerGUI) removeStoppedContainers(app docker.App) {
+	gui.logInfo(fmt.Sprintf("Removing stopped containers for %s...", app.Service))
+	gui.running = true
+	gui.runningCmd = "Remove"
+	gui.cmdStartTime = time.Now()
+
+	go func() {
+		removed := 0
+		allContainers := app.Containers
+		for _, acc := range app.Accessories {
+			allContainers = append(allContainers, acc.Containers...)
+		}
+
+		for _, c := range allContainers {
+			if c.State != "running" {
+				cmd := fmt.Sprintf("docker rm %s", c.ID)
+				if _, err := gui.client.Run(cmd); err != nil {
+					gui.logError(fmt.Sprintf("Failed to remove %s: %s", c.Name, err.Error()))
+				} else {
+					gui.logSuccess(fmt.Sprintf("Removed %s", c.Name))
+					removed++
+				}
+			}
+		}
+
+		gui.running = false
+		if removed == 0 {
+			gui.logInfo("No stopped containers to remove")
+		} else {
+			gui.logSuccess(fmt.Sprintf("Removed %d container(s) in %s", removed, formatDuration(time.Since(gui.cmdStartTime))))
+		}
+	}()
+}
+
+// --- Proxy Management ---
+
+func (gui *ServerGUI) getProxyContainerID() (string, error) {
+	cmd := `docker ps -a --filter "name=kamal-proxy" --format "{{.ID}}" | head -1`
+	output, err := gui.client.Run(cmd)
+	if err != nil {
+		return "", err
+	}
+	id := strings.TrimSpace(output)
+	if id == "" {
+		return "", fmt.Errorf("kamal-proxy container not found")
+	}
+	return id, nil
+}
+
+func (gui *ServerGUI) proxyRestart() {
+	gui.logInfo("Restarting kamal-proxy...")
+	gui.running = true
+	gui.runningCmd = "Proxy Restart"
+	gui.cmdStartTime = time.Now()
+
+	go func() {
+		proxyID, err := gui.getProxyContainerID()
+		if err != nil {
+			gui.logError(err.Error())
+			gui.running = false
+			return
+		}
+
+		if err := docker.RestartContainer(gui.client, proxyID); err != nil {
+			gui.logError(fmt.Sprintf("Failed to restart proxy: %s", err.Error()))
+		} else {
+			gui.logSuccess(fmt.Sprintf("Proxy restarted in %s", formatDuration(time.Since(gui.cmdStartTime))))
+		}
+		gui.running = false
+	}()
+}
+
+func (gui *ServerGUI) proxyReboot() {
+	gui.logInfo("Rebooting kamal-proxy (stop + start)...")
+	gui.running = true
+	gui.runningCmd = "Proxy Reboot"
+	gui.cmdStartTime = time.Now()
+
+	go func() {
+		proxyID, err := gui.getProxyContainerID()
+		if err != nil {
+			gui.logError(err.Error())
+			gui.running = false
+			return
+		}
+
+		if err := docker.StopContainer(gui.client, proxyID); err != nil {
+			gui.logError(fmt.Sprintf("Failed to stop proxy: %s", err.Error()))
+		}
+
+		if err := docker.StartContainer(gui.client, proxyID); err != nil {
+			gui.logError(fmt.Sprintf("Failed to start proxy: %s", err.Error()))
+		} else {
+			gui.logSuccess(fmt.Sprintf("Proxy rebooted in %s", formatDuration(time.Since(gui.cmdStartTime))))
+		}
+		gui.running = false
+	}()
+}
+
+func (gui *ServerGUI) proxyStop() {
+	gui.logInfo("Stopping kamal-proxy...")
+	gui.running = true
+	gui.runningCmd = "Proxy Stop"
+	gui.cmdStartTime = time.Now()
+
+	go func() {
+		proxyID, err := gui.getProxyContainerID()
+		if err != nil {
+			gui.logError(err.Error())
+			gui.running = false
+			return
+		}
+
+		if err := docker.StopContainer(gui.client, proxyID); err != nil {
+			gui.logError(fmt.Sprintf("Failed to stop proxy: %s", err.Error()))
+		} else {
+			gui.logSuccess(fmt.Sprintf("Proxy stopped in %s", formatDuration(time.Since(gui.cmdStartTime))))
+		}
+		gui.running = false
+	}()
+}
+
+func (gui *ServerGUI) proxyStart() {
+	gui.logInfo("Starting kamal-proxy...")
+	gui.running = true
+	gui.runningCmd = "Proxy Start"
+	gui.cmdStartTime = time.Now()
+
+	go func() {
+		proxyID, err := gui.getProxyContainerID()
+		if err != nil {
+			gui.logError(err.Error())
+			gui.running = false
+			return
+		}
+
+		if err := docker.StartContainer(gui.client, proxyID); err != nil {
+			gui.logError(fmt.Sprintf("Failed to start proxy: %s", err.Error()))
+		} else {
+			gui.logSuccess(fmt.Sprintf("Proxy started in %s", formatDuration(time.Since(gui.cmdStartTime))))
+		}
+		gui.running = false
 	}()
 }
 
