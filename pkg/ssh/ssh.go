@@ -143,11 +143,19 @@ func (c *Client) TestConnection() error {
 }
 
 // buildSSHArgs builds the SSH command arguments
+// Uses ControlMaster for connection multiplexing (reuses connections)
 func (c *Client) buildSSHArgs() []string {
+	// Control socket path for connection reuse
+	controlPath := fmt.Sprintf("/tmp/lazykamal-ssh-%s", c.Host)
+
 	args := []string{
 		"-o", "BatchMode=yes",
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "ConnectTimeout=10",
+		// Connection multiplexing - reuse existing connections
+		"-o", "ControlMaster=auto",
+		"-o", fmt.Sprintf("ControlPath=%s", controlPath),
+		"-o", "ControlPersist=60", // Keep connection alive for 60 seconds
 	}
 
 	if c.Port != "22" {
