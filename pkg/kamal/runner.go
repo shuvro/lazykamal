@@ -81,7 +81,7 @@ func RunKamal(subcommand []string, opts RunOptions) (Result, error) {
 	code := 0
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		code = exitErr.ExitCode()
-		err = nil
+		// Non-zero exit is not an error for us - we capture it in ExitCode
 	} else if err != nil {
 		return Result{}, err
 	}
