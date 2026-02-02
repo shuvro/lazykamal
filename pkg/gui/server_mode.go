@@ -121,9 +121,7 @@ func (gui *ServerGUI) layout(g *gocui.Gui) error {
 			return err
 		}
 		v.Frame = true
-		v.Highlight = true
-		v.SelBgColor = gocui.ColorGreen
-		v.SelFgColor = gocui.ColorBlack
+		// We use our own visual selection (> arrow) instead of gocui's cursor highlight
 	}
 	gui.renderLeftPanel(g)
 
