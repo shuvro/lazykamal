@@ -16,6 +16,16 @@ linters-settings:
   errcheck:
     check-type-assertions: true
     check-blank: false # Allow blank identifier for intentional ignores
+    # Exclude functions where errors are safe to ignore (TUI output, cleanup)
+    exclude-functions:
+      - fmt.Fprint
+      - fmt.Fprintf
+      - fmt.Fprintln
+      - (github.com/jroimartin/gocui.Gui).SetCurrentView
+      - (github.com/jroimartin/gocui.Gui).DeleteView
+      - (github.com/jroimartin/gocui.View).SetCursor
+      - (*os/exec.Cmd).Wait
+      - os.Remove
   govet:
     enable-all: true
     disable:
