@@ -48,16 +48,16 @@ changelog:
 
 release:
   github:
-    owner: lazykamal
+    owner: shuvro
     name: lazykamal
   draft: false
 
 brews:
   - name: lazykamal
     repository:
-      owner: lazykamal
+      owner: shuvro
       name: homebrew-lazykamal
-    homepage: "https://github.com/lazykamal/lazykamal"
+    homepage: "https://github.com/shuvro/lazykamal"
     description: "Lazydocker-style TUI for Kamal-deployed apps"
     license: "MIT"
     skip_upload: auto
