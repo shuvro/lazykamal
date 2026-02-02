@@ -61,6 +61,15 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Handle --uninstall flag
+	if len(os.Args) == 2 && (os.Args[1] == "--uninstall" || os.Args[1] == "uninstall") {
+		if err := doUninstall(); err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	// Check that kamal is installed before starting the TUI
 	if err := checkKamalInstalled(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
@@ -116,6 +125,7 @@ Options:
   -v, --version         Show version information
   --upgrade             Upgrade to the latest version
   --check-update        Check if an update is available
+  --uninstall           Remove lazykamal from your system
 
 Keyboard Shortcuts:
   ↑/↓         Navigate menus
@@ -128,4 +138,35 @@ Keyboard Shortcuts:
   q           Quit
 
 For more information, visit: https://github.com/shuvro/lazykamal`)
+}
+
+func doUninstall() error {
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	fmt.Println("Uninstalling lazykamal...")
+	fmt.Printf("Binary location: %s\n", execPath)
+	fmt.Print("\nAre you sure you want to uninstall? [y/N]: ")
+
+	var response string
+	fmt.Scanln(&response)
+
+	if response != "y" && response != "Y" {
+		fmt.Println("Uninstall cancelled.")
+		return nil
+	}
+
+	// Try to remove the binary
+	if err := os.Remove(execPath); err != nil {
+		// Might need sudo
+		fmt.Printf("\nPermission denied. Try running:\n  sudo rm %s\n", execPath)
+		return err
+	}
+
+	fmt.Println("\n✓ Lazykamal has been uninstalled.")
+	fmt.Println("\nTo reinstall, run:")
+	fmt.Println("  curl -sSL https://raw.githubusercontent.com/shuvro/lazykamal/main/scripts/install.sh | bash")
+	return nil
 }
