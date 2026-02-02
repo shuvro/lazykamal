@@ -525,7 +525,7 @@ func (gui *GUI) renderAccessoryMenu(v *gocui.View) {
 		label = dest.Label()
 	}
 	fmt.Fprintf(v, " App: %s\n\n", label)
-	actions := []string{"Boot all", "Start all", "Stop all", "Restart all", "Reboot all", "Remove all", "Details all", "Logs all", "Upgrade"}
+	actions := []string{"Boot all", "Start all", "Stop all", "Restart all", "Reboot all", "Remove all", "Details all", "Logs all", "Exec: sh (all)", "Upgrade"}
 	for i, a := range actions {
 		prefix := "  "
 		if i == gui.submenuIdx {
@@ -1247,7 +1247,7 @@ func (gui *GUI) keyDown(g *gocui.Gui, v *gocui.View) error {
 			gui.submenuIdx++
 		}
 	case ScreenAccessory:
-		if gui.submenuIdx < 8 {
+		if gui.submenuIdx < 9 {
 			gui.submenuIdx++
 		}
 	case ScreenProxy:
@@ -1497,6 +1497,9 @@ func (gui *GUI) execAccessory() {
 		name = "Accessory Logs All"
 		fn = func() (kamal.Result, error) { return kamal.AccessoryLogs(opts, "all") }
 	case 8:
+		name = "Accessory Exec All"
+		fn = func() (kamal.Result, error) { return kamal.AccessoryExec(opts, "all", "sh") }
+	case 9:
 		name = "Accessory Upgrade"
 		fn = func() (kamal.Result, error) { return kamal.AccessoryUpgrade(opts) }
 	default:
