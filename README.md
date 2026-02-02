@@ -2,6 +2,15 @@
 
 A **lazydocker-style** terminal UI for [Kamal](https://kamal-deploy.org)-deployed apps. Manage deploy, app, server, accessory, and proxy from one interactive screen—no need to remember every `kamal` command.
 
+<p align="center">
+  <img src="assets/server-mode-apps.png" alt="Server Mode - Apps List" width="800">
+</p>
+
+<p align="center">
+  <img src="assets/server-mode-menu.png" alt="Server Mode - App Menu" width="400">
+  <img src="assets/container-select.png" alt="Container Select" width="400">
+</p>
+
 ## Two Modes
 
 ### Project Mode (default)
