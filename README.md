@@ -62,23 +62,23 @@ Ensure `$GOPATH/bin` or `$HOME/go/bin` is in your `PATH`.
 Downloads the latest release and installs to `~/.local/bin` (override with `DIR`):
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/lazykamal/lazykamal/main/scripts/install_update_linux.sh | bash
+curl -sSL https://raw.githubusercontent.com/shuvro/lazykamal/main/scripts/install_update_linux.sh | bash
 ```
 
 Custom install directory:
 
 ```bash
-DIR=/usr/local/bin bash -c "$(curl -sSL https://raw.githubusercontent.com/lazykamal/lazykamal/main/scripts/install_update_linux.sh)"
+DIR=/usr/local/bin bash -c "$(curl -sSL https://raw.githubusercontent.com/shuvro/lazykamal/main/scripts/install_update_linux.sh)"
 ```
 
 ### Scoop (Windows)
 
-```bash
-scoop bucket add lazykamal https://github.com/lazykamal/scoop-lazykamal
+```powershell
+scoop bucket add lazykamal https://github.com/shuvro/scoop-lazykamal
 scoop install lazykamal
 ```
 
-*(Requires a [Scoop bucket](https://github.com/lazykamal/scoop-lazykamal) to be set up.)*
+*(Requires creating [scoop-lazykamal](https://github.com/shuvro/scoop-lazykamal) repo first - see below)*
 
 ### Chocolatey (Windows)
 
