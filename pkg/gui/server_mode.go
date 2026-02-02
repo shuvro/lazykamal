@@ -426,12 +426,16 @@ func (gui *ServerGUI) renderContainerSelect(v *gocui.View) {
 
 	// Show actions for selected container
 	if gui.selectedContainer < len(gui.allContainers) {
+		ci := gui.allContainers[gui.selectedContainer]
 		fmt.Fprintln(v, "")
 		fmt.Fprintln(v, dim(" Actions:"))
 		fmt.Fprintln(v, "   l - View Logs")
 		fmt.Fprintln(v, "   r - Restart")
 		fmt.Fprintln(v, "   s - Stop")
 		fmt.Fprintln(v, "   S - Start")
+		if ci.Container.State != "running" {
+			fmt.Fprintln(v, "   "+red("x - Remove (stopped)"))
+		}
 	}
 
 	fmt.Fprintln(v, "")
@@ -712,6 +716,9 @@ func (gui *ServerGUI) keybindings(g *gocui.Gui) error {
 	if err := g.SetKeybinding("", 'S', gocui.ModNone, gui.keyContainerStart); err != nil {
 		return err
 	}
+	if err := g.SetKeybinding("", 'x', gocui.ModNone, gui.keyContainerRemove); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -746,6 +753,41 @@ func (gui *ServerGUI) keyContainerStart(g *gocui.Gui, v *gocui.View) error {
 		gui.startContainer(ci)
 	}
 	return nil
+}
+
+func (gui *ServerGUI) keyContainerRemove(g *gocui.Gui, v *gocui.View) error {
+	if gui.screen != ServerScreenContainerSelect {
+		return nil
+	}
+	if gui.selectedContainer < len(gui.allContainers) {
+		ci := gui.allContainers[gui.selectedContainer]
+		// Only remove stopped containers
+		if ci.Container.State != "running" {
+			gui.removeContainer(ci)
+		} else {
+			gui.logError("Cannot remove running container. Stop it first.")
+		}
+	}
+	return nil
+}
+
+func (gui *ServerGUI) removeContainer(ci ContainerInfo) {
+	gui.logInfo(fmt.Sprintf("Removing %s...", ci.Container.Name))
+	gui.running = true
+	gui.runningCmd = "Remove"
+	gui.cmdStartTime = time.Now()
+
+	go func() {
+		cmd := fmt.Sprintf("docker rm %s", ci.Container.ID)
+		if _, err := gui.client.Run(cmd); err != nil {
+			gui.logError(fmt.Sprintf("Failed to remove %s: %s", ci.Container.Name, err.Error()))
+		} else {
+			gui.logSuccess(fmt.Sprintf("Removed %s in %s", ci.Container.Name, formatDuration(time.Since(gui.cmdStartTime))))
+			// Refresh the container list
+			gui.buildContainerList()
+		}
+		gui.running = false
+	}()
 }
 
 func (gui *ServerGUI) keyDown(g *gocui.Gui, v *gocui.View) error {
