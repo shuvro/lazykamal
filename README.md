@@ -25,7 +25,7 @@ lazykamal                      # In a directory with config/deploy.yml
 lazykamal /path/to/kamal-app   # Or specify the path
 ```
 
-### Server Mode (NEW in v0.3.0)
+### Server Mode
 Connect to any server and discover ALL Kamal-deployed apps:
 ```bash
 lazykamal --server 100.70.90.101        # Via IP (works with Tailscale)
@@ -60,8 +60,16 @@ Server mode SSHs to the server, discovers all Kamal apps from Docker container l
 
 ## Requirements
 
+**Project Mode:**
 - [Kamal](https://kamal-deploy.org/docs/installation/) installed and on your `PATH`
-- Go 1.21+ (only if building from source)
+
+**Server Mode:**
+- SSH access to the target server
+- Docker running on the server
+- No Kamal installation required on the server
+
+**Building from source:**
+- Go 1.21+
 
 ## Installation
 
@@ -118,21 +126,12 @@ curl -sSL https://raw.githubusercontent.com/shuvro/lazykamal/main/scripts/instal
 Install specific version:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/shuvro/lazykamal/main/scripts/install.sh | VERSION=v1.0.3 bash
+curl -sSL https://raw.githubusercontent.com/shuvro/lazykamal/main/scripts/install.sh | VERSION=v0.1.3 bash
 ```
-
-### Scoop (Windows)
-
-```powershell
-scoop bucket add lazykamal https://github.com/shuvro/scoop-lazykamal
-scoop install lazykamal
-```
-
-*(Requires creating [scoop-lazykamal](https://github.com/shuvro/scoop-lazykamal) repo first)*
 
 ### Binary release
 
-Download the latest [release](https://github.com/shuvro/lazykamal/releases) for your OS and architecture (e.g. `lazykamal_1.0.0_Linux_amd64.tar.gz`), extract, and put `lazykamal` in your `PATH`.
+Download the latest [release](https://github.com/shuvro/lazykamal/releases) for your OS and architecture (e.g. `lazykamal_0.1.3_linux_amd64.tar.gz`), extract, and put `lazykamal` in your `PATH`.
 
 ### Build from source
 
@@ -185,18 +184,32 @@ lazykamal --uninstall     # Remove lazykamal
 
 ### Keybindings
 
+**General:**
 | Key        | Action                    |
 |-----------|----------------------------|
 | **↑ / ↓** | Move selection             |
 | **Enter** | Open menu / Run command    |
-| **m**     | Open main command menu     |
 | **b** / **Esc** | Back (or stop live logs) |
-| **r**     | Refresh destinations & status |
 | **j / k** | Scroll log panel down/up   |
-| **J / K** | Scroll status panel down/up |
 | **c**     | Clear output/log panel     |
 | **?**     | Show help overlay          |
 | **q**     | Quit                       |
+
+**Project Mode:**
+| Key | Action |
+|-----|--------|
+| **m** | Open main command menu |
+| **r** | Refresh destinations & status |
+| **J / K** | Scroll status panel down/up |
+
+**Server Mode - Container Select:**
+| Key | Action |
+|-----|--------|
+| **l** | View logs for selected container |
+| **r** | Restart selected container |
+| **s** | Stop selected container |
+| **S** | Start selected container |
+| **x** | Remove stopped container |
 
 ### Screens
 
