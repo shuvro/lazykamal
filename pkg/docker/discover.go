@@ -123,9 +123,42 @@ func parseLabels(labelsStr string) map[string]string {
 	return labels
 }
 
+// Known accessory suffixes - Kamal uses service names like "myapp-postgres"
+var accessorySuffixes = []string{
+	"-postgres", "-postgresql", "-mysql", "-mariadb", "-redis",
+	"-memcached", "-mongodb", "-elasticsearch", "-rabbitmq",
+	"-sidekiq", "-worker", "-jobs", "-cron", "-scheduler",
+	"-backend", "-api", "-frontend", "-web",
+}
+
+// parseServiceName extracts base app name and accessory type from service name
+// e.g., "repoengine-postgres" -> ("repoengine", "postgres")
+// e.g., "repoengine" -> ("repoengine", "")
+func parseServiceName(service string) (baseApp string, accessoryType string) {
+	for _, suffix := range accessorySuffixes {
+		if strings.HasSuffix(service, suffix) {
+			base := strings.TrimSuffix(service, suffix)
+			accType := strings.TrimPrefix(suffix, "-")
+			return base, accType
+		}
+	}
+	return service, ""
+}
+
 // groupContainers groups containers into apps by service and destination
 func groupContainers(containers []Container) []App {
-	// Map: service -> destination -> app
+	// First pass: collect all unique base app names
+	baseApps := make(map[string]bool)
+	for _, c := range containers {
+		service := c.Labels["service"]
+		if service == "" {
+			continue
+		}
+		baseApp, _ := parseServiceName(service)
+		baseApps[baseApp] = true
+	}
+
+	// Map: baseApp -> destination -> app
 	appMap := make(map[string]map[string]*App)
 
 	for _, c := range containers {
@@ -139,23 +172,40 @@ func groupContainers(containers []Container) []App {
 			destination = "production"
 		}
 
-		role := c.Labels["role"]
+		// Parse service name to get base app and accessory type
+		baseApp, accessoryType := parseServiceName(service)
+
+		// Check if this is actually a main app (exists as a base app in our list)
+		// This handles cases where "myapp-backend" is a main app, not an accessory
+		isMainApp := baseApps[service]
+
+		// If the service itself is a known base app, treat it as main app
+		if isMainApp {
+			baseApp = service
+			accessoryType = ""
+		}
 
 		// Initialize app map
-		if appMap[service] == nil {
-			appMap[service] = make(map[string]*App)
+		if appMap[baseApp] == nil {
+			appMap[baseApp] = make(map[string]*App)
 		}
-		if appMap[service][destination] == nil {
-			appMap[service][destination] = &App{
-				Service:     service,
+		if appMap[baseApp][destination] == nil {
+			appMap[baseApp][destination] = &App{
+				Service:     baseApp,
 				Destination: destination,
 			}
 		}
 
-		app := appMap[service][destination]
+		app := appMap[baseApp][destination]
+
+		// Use role label if present, otherwise use parsed accessory type
+		role := c.Labels["role"]
+		if role == "" {
+			role = accessoryType
+		}
 
 		// Categorize by role
-		if role == "web" || role == "" {
+		if role == "" || role == "web" {
 			app.Containers = append(app.Containers, c)
 		} else {
 			// It's an accessory
