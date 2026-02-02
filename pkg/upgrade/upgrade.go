@@ -131,7 +131,7 @@ func DoUpgrade(currentVersion string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Extract binary from tar.gz
 	fmt.Println("Extracting...")
@@ -164,18 +164,18 @@ func DoUpgrade(currentVersion string) error {
 	// Move new binary
 	if err := copyFile(newBinaryPath, execPath); err != nil {
 		// Restore backup on failure
-		os.Rename(backupPath, execPath)
+		_ = os.Rename(backupPath, execPath)
 		return fmt.Errorf("failed to install new binary: %w", err)
 	}
 
 	// Make executable
 	if err := os.Chmod(execPath, 0755); err != nil {
-		os.Rename(backupPath, execPath)
+		_ = os.Rename(backupPath, execPath)
 		return fmt.Errorf("failed to set permissions: %w", err)
 	}
 
 	// Remove backup
-	os.Remove(backupPath)
+	_ = os.Remove(backupPath)
 
 	fmt.Printf("\n✓ Successfully upgraded to %s\n", latestVersion)
 	return nil
@@ -186,7 +186,7 @@ func extractTarGz(r io.Reader, destDir, targetFile string) error {
 	if err != nil {
 		return err
 	}
-	defer gzr.Close()
+	defer func() { _ = gzr.Close() }()
 
 	tr := tar.NewReader(gzr)
 
@@ -201,14 +201,7 @@ func extractTarGz(r io.Reader, destDir, targetFile string) error {
 
 		// Only extract the target file
 		if header.Name == targetFile || filepath.Base(header.Name) == targetFile {
-			destPath := filepath.Join(destDir, targetFile)
-			outFile, err := os.Create(destPath)
-			if err != nil {
-				return err
-			}
-			defer outFile.Close()
-
-			if _, err := io.Copy(outFile, tr); err != nil {
+			if err := extractFile(tr, filepath.Join(destDir, targetFile)); err != nil {
 				return err
 			}
 			return nil
@@ -218,6 +211,17 @@ func extractTarGz(r io.Reader, destDir, targetFile string) error {
 	return fmt.Errorf("binary not found in archive")
 }
 
+func extractFile(r io.Reader, destPath string) error {
+	outFile, err := os.Create(destPath)
+	if err != nil {
+		return err
+	}
+	defer outFile.Close()
+
+	_, err = io.Copy(outFile, r)
+	return err
+}
+
 func checkWritePermission(path string) error {
 	dir := filepath.Dir(path)
 	testFile := filepath.Join(dir, ".lazykamal-write-test")
@@ -225,8 +229,8 @@ func checkWritePermission(path string) error {
 	if err != nil {
 		return err
 	}
-	f.Close()
-	os.Remove(testFile)
+	_ = f.Close()
+	_ = os.Remove(testFile)
 	return nil
 }
 
