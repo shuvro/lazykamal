@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Kamal Documentation
+    url: https://kamal-deploy.org/docs/
+    about: Official Kamal documentation for deployment questions
+  - name: Discussions
+    url: https://github.com/lazykamal/lazykamal/discussions
+    about: Ask questions and discuss ideas

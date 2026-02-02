@@ -1,0 +1,65 @@
+# Goreleaser config for GitHub Releases and Homebrew.
+# Run: goreleaser release --snapshot  (dry run) or goreleaser release (with tag)
+version: 2
+project_name: lazykamal
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: lazykamal
+    main: .
+    binary: lazykamal
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    goarm:
+      - 6
+      - 7
+    ldflags:
+      - -s -w -X main.version={{.Version }}
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: default
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: "lazykamal_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    builds:
+      - lazykamal
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  skip: true
+
+release:
+  github:
+    owner: lazykamal
+    name: lazykamal
+  draft: false
+
+brews:
+  - name: lazykamal
+    repository:
+      owner: lazykamal
+      name: homebrew-lazykamal
+    homepage: "https://github.com/lazykamal/lazykamal"
+    description: "Lazydocker-style TUI for Kamal-deployed apps"
+    license: "MIT"
+    skip_upload: auto
+    install: |
+      bin.install "lazykamal"

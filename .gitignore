@@ -1,0 +1,72 @@
+# Binary
+/lazykamal
+/kamal-tui
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Build artifacts
+dist/
+vendor/
+bin/
+
+# Test artifacts
+*.test
+*.out
+coverage.txt
+coverage.out
+coverage.html
+*.prof
+
+# Go workspace (for multi-module development)
+go.work
+go.work.sum
+
+# Environment files (may contain secrets)
+.env
+.env.*
+!.env.example
+
+# Log files
+*.log
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.sublime-workspace
+*.sublime-project
+.project
+.settings/
+*.iml
+
+# Debug
+__debug_bin*
+debug
+debug.test
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# GoReleaser
+dist/
+*.tar.gz
+*.zip
+checksums.txt
