@@ -310,10 +310,10 @@ func (gui *GUI) renderHelpOverlay(g *gocui.Gui) error {
 
  Scrolling (right panels)
  ──────────────────────────────────────────────
-   [ / PgUp    Scroll log up
-   ] / PgDn    Scroll log down
-   {           Scroll status up
-   }           Scroll status down
+   j / PgDn    Scroll log down
+   k / PgUp    Scroll log up
+   J (shift)   Scroll status down
+   K (shift)   Scroll status up
 
  Live Logs
  ──────────────────────────────────────────────
@@ -918,11 +918,11 @@ func (gui *GUI) keybindings(g *gocui.Gui) error {
 	if err := g.SetKeybinding("", 'c', gocui.ModNone, gui.keyClearLog); err != nil {
 		return err
 	}
-	// Scroll log view: [ and ] or Page Up/Down
-	if err := g.SetKeybinding("", '[', gocui.ModNone, gui.keyScrollLogUp); err != nil {
+	// Scroll log view: j/k or Page Up/Down
+	if err := g.SetKeybinding("", 'k', gocui.ModNone, gui.keyScrollLogUp); err != nil {
 		return err
 	}
-	if err := g.SetKeybinding("", ']', gocui.ModNone, gui.keyScrollLogDown); err != nil {
+	if err := g.SetKeybinding("", 'j', gocui.ModNone, gui.keyScrollLogDown); err != nil {
 		return err
 	}
 	if err := g.SetKeybinding("", gocui.KeyPgup, gocui.ModNone, gui.keyScrollLogUp); err != nil {
@@ -931,11 +931,11 @@ func (gui *GUI) keybindings(g *gocui.Gui) error {
 	if err := g.SetKeybinding("", gocui.KeyPgdn, gocui.ModNone, gui.keyScrollLogDown); err != nil {
 		return err
 	}
-	// Scroll status view: { and }
-	if err := g.SetKeybinding("", '{', gocui.ModNone, gui.keyScrollStatusUp); err != nil {
+	// Scroll status view: K/J (shift)
+	if err := g.SetKeybinding("", 'K', gocui.ModNone, gui.keyScrollStatusUp); err != nil {
 		return err
 	}
-	if err := g.SetKeybinding("", '}', gocui.ModNone, gui.keyScrollStatusDown); err != nil {
+	if err := g.SetKeybinding("", 'J', gocui.ModNone, gui.keyScrollStatusDown); err != nil {
 		return err
 	}
 	// Confirm dialog: left/right arrows and enter
