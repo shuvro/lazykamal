@@ -24,13 +24,10 @@ type ServerGUI struct {
 	logLines     []string
 	logMu        sync.Mutex
 	logScroll    int
-	statusScroll int
 	running      bool
 	runningCmd   string
 	cmdStartTime time.Time
 	spinner      *Spinner
-	liveLogsStop chan struct{}
-	liveLogsMu   sync.Mutex
 }
 
 // ServerScreen represents the current screen in server mode

@@ -217,7 +217,7 @@ func doUninstall() error {
 	fmt.Print("\nAre you sure you want to uninstall? [y/N]: ")
 
 	var response string
-	fmt.Scanln(&response)
+	_, _ = fmt.Scanln(&response)
 
 	if response != "y" && response != "Y" {
 		fmt.Println("Uninstall cancelled.")
