@@ -48,9 +48,9 @@ type ServerScreen int
 const (
 	ServerScreenApps ServerScreen = iota
 	ServerScreenAppMenu
-	ServerScreenContainerSelect // New: select a container for actions
-	ServerScreenContainers
-	ServerScreenAccessories
+	ServerScreenContainerSelect
+	ServerScreenActionsMenu  // Submenu: Start/Stop/Restart/etc
+	ServerScreenProxyMenu    // Submenu: Proxy operations
 	ServerScreenHelp
 )
 
@@ -218,6 +218,10 @@ func (gui *ServerGUI) renderLeftPanel(g *gocui.Gui) {
 		gui.renderAppMenu(v)
 	case ServerScreenContainerSelect:
 		gui.renderContainerSelect(v)
+	case ServerScreenActionsMenu:
+		gui.renderActionsMenu(v)
+	case ServerScreenProxyMenu:
+		gui.renderProxyMenu(v)
 	}
 }
 
@@ -280,60 +284,114 @@ func (gui *ServerGUI) renderAppMenu(v *gocui.View) {
 	app := gui.apps[gui.selectedApp]
 	v.Title = fmt.Sprintf(" %s (%s) ", app.Service, app.Destination)
 
-	// Menu structure mirrors Kamal commands
-	// Comprehensive menu matching all Kamal app/proxy commands
-	menuItems := []string{
-		"Containers...",    // 0 - Select and manage individual containers
-		"─── App ───",      // 1 - separator
-		"Logs (streaming)", // 2 - Live logs
-		"Details",          // 3 - Show container details
-		"Images",           // 4 - Show container images
-		"Version",          // 5 - Show app version
-		"Health",           // 6 - Check container health
-		"─── Actions ───",  // 7 - separator
-		"Boot / Reboot",    // 8 - Restart all containers
-		"Start",            // 9 - Start all containers
-		"Stop",             // 10 - Stop all containers
-		"Restart",          // 11 - Restart all containers
-		"Remove",           // 12 - Remove stopped containers
-		"─── Commands ───", // 13 - separator
-		"Exec (shell)",     // 14 - Execute shell in container
-		"─── Proxy ───",    // 15 - separator
-		"Proxy Logs",       // 16 - View proxy logs
-		"Proxy Details",    // 17 - Proxy container details
-		"Proxy Restart",    // 18 - Restart proxy
-		"Proxy Reboot",     // 19 - Reboot proxy (stop + start)
-		"Proxy Stop",       // 20 - Stop proxy
-		"Proxy Start",      // 21 - Start proxy
-		"───────────────",  // 22 - separator
-		"Back",             // 23 - Go back
+	// Clean, simple top-level menu with submenus
+	// 0: Containers, 1: Logs, 2: Details, 3: Actions submenu, 4: Proxy submenu, 5: Exec, 6: Back
+	menuItems := []struct {
+		label   string
+		submenu bool
+		danger  bool
+	}{
+		{"Containers", true, false},       // 0 - Select individual containers
+		{"Logs (live)", false, false},     // 1 - Live streaming logs
+		{"Details", false, false},         // 2 - Show container details
+		{"Actions", true, false},          // 3 - Submenu: start/stop/restart
+		{"Proxy", true, false},            // 4 - Submenu: proxy operations
+		{"Exec (shell)", false, false},    // 5 - Show SSH command
+		{"Back", false, false},            // 6 - Go back
 	}
 
-	// Track actual selectable items (skip separators)
-	selectableIdx := 0
-	for _, item := range menuItems {
-		if strings.HasPrefix(item, "───") {
-			fmt.Fprintln(v, dim("  "+item))
-			continue
-		}
-
+	for i, item := range menuItems {
 		prefix := "  "
-		if selectableIdx == gui.selectedItem {
+		if i == gui.selectedItem {
 			prefix = cyan(iconArrow) + " "
 		}
-		selectableIdx++
 
-		// Color destructive actions
-		displayItem := item
-		if item == "Stop" || item == "Remove" || item == "Proxy Stop" {
-			displayItem = red(item)
+		label := item.label
+		if item.submenu {
+			label += " →"
 		}
 
-		fmt.Fprintln(v, prefix+displayItem)
+		fmt.Fprintln(v, prefix+label)
 	}
 
 	fmt.Fprintln(v, "")
-	fmt.Fprintln(v, dim(" Enter: select  b/Esc: back"))
+	fmt.Fprintln(v, dim(" ↑/↓: navigate  Enter: select  b: back"))
+}
+
+func (gui *ServerGUI) renderActionsMenu(v *gocui.View) {
+	if gui.selectedApp >= len(gui.apps) {
+		return
+	}
+	app := gui.apps[gui.selectedApp]
+	v.Title = fmt.Sprintf(" %s › Actions ", app.Service)
+
+	// Actions submenu: 0-7 items
+	menuItems := []struct {
+		label  string
+		danger bool
+	}{
+		{"Boot / Reboot", false},  // 0
+		{"Start", false},          // 1
+		{"Stop", true},            // 2 - destructive
+		{"Restart", false},        // 3
+		{"Remove stopped", true},  // 4 - destructive
+		{"Images", false},         // 5
+		{"Version", false},        // 6
+		{"Health", false},         // 7
+		{"Back", false},           // 8
+	}
+
+	for i, item := range menuItems {
+		prefix := "  "
+		if i == gui.selectedItem {
+			prefix = cyan(iconArrow) + " "
+		}
+
+		label := item.label
+		if item.danger {
+			label = red(label)
+		}
+
+		fmt.Fprintln(v, prefix+label)
+	}
+
+	fmt.Fprintln(v, "")
+	fmt.Fprintln(v, dim(" ↑/↓: navigate  Enter: select  b: back"))
+}
+
+func (gui *ServerGUI) renderProxyMenu(v *gocui.View) {
+	v.Title = " Proxy "
+
+	// Proxy submenu: 0-6 items
+	menuItems := []struct {
+		label  string
+		danger bool
+	}{
+		{"Logs (live)", false},  // 0
+		{"Details", false},      // 1
+		{"Restart", false},      // 2
+		{"Reboot", false},       // 3
+		{"Stop", true},          // 4 - destructive
+		{"Start", false},        // 5
+		{"Back", false},         // 6
+	}
+
+	for i, item := range menuItems {
+		prefix := "  "
+		if i == gui.selectedItem {
+			prefix = cyan(iconArrow) + " "
+		}
+
+		label := item.label
+		if item.danger {
+			label = red(label)
+		}
+
+		fmt.Fprintln(v, prefix+label)
+	}
+
+	fmt.Fprintln(v, "")
+	fmt.Fprintln(v, dim(" ↑/↓: navigate  Enter: select  b: back"))
 }
 
 func (gui *ServerGUI) renderContainerSelect(v *gocui.View) {
@@ -697,8 +755,18 @@ func (gui *ServerGUI) keyDown(g *gocui.Gui, v *gocui.View) error {
 			gui.selectedApp++
 		}
 	case ServerScreenAppMenu:
-		// 11 selectable items (0-10): Containers, Logs, Details, Boot, Start, Stop, Restart, Exec, ProxyLogs, ProxyDetails, Back
-		if gui.selectedItem < 10 {
+		// 7 items: Containers, Logs, Details, Actions, Proxy, Exec, Back
+		if gui.selectedItem < 6 {
+			gui.selectedItem++
+		}
+	case ServerScreenActionsMenu:
+		// 9 items: Boot, Start, Stop, Restart, Remove, Images, Version, Health, Back
+		if gui.selectedItem < 8 {
+			gui.selectedItem++
+		}
+	case ServerScreenProxyMenu:
+		// 7 items: Logs, Details, Restart, Reboot, Stop, Start, Back
+		if gui.selectedItem < 6 {
 			gui.selectedItem++
 		}
 	case ServerScreenContainerSelect:
@@ -715,7 +783,7 @@ func (gui *ServerGUI) keyUp(g *gocui.Gui, v *gocui.View) error {
 		if gui.selectedApp > 0 {
 			gui.selectedApp--
 		}
-	case ServerScreenAppMenu:
+	case ServerScreenAppMenu, ServerScreenActionsMenu, ServerScreenProxyMenu:
 		if gui.selectedItem > 0 {
 			gui.selectedItem--
 		}
@@ -735,7 +803,11 @@ func (gui *ServerGUI) keyEnter(g *gocui.Gui, v *gocui.View) error {
 			gui.selectedItem = 0
 		}
 	case ServerScreenAppMenu:
-		gui.executeAppAction()
+		gui.executeAppMenuAction()
+	case ServerScreenActionsMenu:
+		gui.executeActionsMenuAction()
+	case ServerScreenProxyMenu:
+		gui.executeProxyMenuAction()
 	case ServerScreenContainerSelect:
 		// Enter on container shows its logs by default
 		if gui.selectedContainer < len(gui.allContainers) {
@@ -760,6 +832,9 @@ func (gui *ServerGUI) keyBack(g *gocui.Gui, v *gocui.View) error {
 		gui.screen = ServerScreenAppMenu
 		gui.selectedContainer = 0
 		gui.allContainers = nil
+	case ServerScreenActionsMenu, ServerScreenProxyMenu:
+		gui.screen = ServerScreenAppMenu
+		gui.selectedItem = 0
 	case ServerScreenAppMenu:
 		gui.screen = ServerScreenApps
 		gui.selectedItem = 0
@@ -843,58 +918,86 @@ func (gui *ServerGUI) keyScrollUp(g *gocui.Gui, v *gocui.View) error {
 	return nil
 }
 
-func (gui *ServerGUI) executeAppAction() {
+// executeAppMenuAction handles main app menu selections
+func (gui *ServerGUI) executeAppMenuAction() {
 	if gui.selectedApp >= len(gui.apps) {
 		return
 	}
 	app := gui.apps[gui.selectedApp]
 
-	// Selectable menu items (excluding separators):
-	// 0: Containers, 1: Logs, 2: Details, 3: Images, 4: Version, 5: Health
-	// 6: Boot/Reboot, 7: Start, 8: Stop, 9: Restart, 10: Remove
-	// 11: Exec, 12: Proxy Logs, 13: Proxy Details, 14: Proxy Restart, 15: Proxy Reboot
-	// 16: Proxy Stop, 17: Proxy Start, 18: Back
+	// Main menu: 0: Containers, 1: Logs, 2: Details, 3: Actions→, 4: Proxy→, 5: Exec, 6: Back
 	switch gui.selectedItem {
-	case 0: // Containers...
+	case 0: // Containers →
 		gui.screen = ServerScreenContainerSelect
 		gui.selectedContainer = 0
 		gui.buildContainerList()
-	case 1: // Logs (streaming)
+	case 1: // Logs (live)
 		gui.viewAppLogs(app)
 	case 2: // Details
 		gui.showAppDetails(app)
-	case 3: // Images
-		gui.showAppImages(app)
-	case 4: // Version
-		gui.showAppVersion(app)
-	case 5: // Health
-		gui.showAppHealth(app)
-	case 6: // Boot / Reboot
-		gui.rebootApp(app)
-	case 7: // Start
-		gui.startApp(app)
-	case 8: // Stop
-		gui.stopApp(app)
-	case 9: // Restart
-		gui.restartApp(app)
-	case 10: // Remove
-		gui.removeStoppedContainers(app)
-	case 11: // Exec (shell)
+	case 3: // Actions →
+		gui.screen = ServerScreenActionsMenu
+		gui.selectedItem = 0
+	case 4: // Proxy →
+		gui.screen = ServerScreenProxyMenu
+		gui.selectedItem = 0
+	case 5: // Exec (shell)
 		gui.execShell(app)
-	case 12: // Proxy Logs
-		gui.viewProxyLogs()
-	case 13: // Proxy Details
-		gui.showProxyDetails()
-	case 14: // Proxy Restart
-		gui.proxyRestart()
-	case 15: // Proxy Reboot
-		gui.proxyReboot()
-	case 16: // Proxy Stop
-		gui.proxyStop()
-	case 17: // Proxy Start
-		gui.proxyStart()
-	case 18: // Back
+	case 6: // Back
 		gui.screen = ServerScreenApps
+		gui.selectedItem = 0
+	}
+}
+
+// executeActionsMenuAction handles actions submenu selections
+func (gui *ServerGUI) executeActionsMenuAction() {
+	if gui.selectedApp >= len(gui.apps) {
+		return
+	}
+	app := gui.apps[gui.selectedApp]
+
+	// Actions menu: 0: Boot, 1: Start, 2: Stop, 3: Restart, 4: Remove, 5: Images, 6: Version, 7: Health, 8: Back
+	switch gui.selectedItem {
+	case 0: // Boot / Reboot
+		gui.rebootApp(app)
+	case 1: // Start
+		gui.startApp(app)
+	case 2: // Stop
+		gui.stopApp(app)
+	case 3: // Restart
+		gui.restartApp(app)
+	case 4: // Remove stopped
+		gui.removeStoppedContainers(app)
+	case 5: // Images
+		gui.showAppImages(app)
+	case 6: // Version
+		gui.showAppVersion(app)
+	case 7: // Health
+		gui.showAppHealth(app)
+	case 8: // Back
+		gui.screen = ServerScreenAppMenu
+		gui.selectedItem = 0
+	}
+}
+
+// executeProxyMenuAction handles proxy submenu selections
+func (gui *ServerGUI) executeProxyMenuAction() {
+	// Proxy menu: 0: Logs, 1: Details, 2: Restart, 3: Reboot, 4: Stop, 5: Start, 6: Back
+	switch gui.selectedItem {
+	case 0: // Logs (live)
+		gui.viewProxyLogs()
+	case 1: // Details
+		gui.showProxyDetails()
+	case 2: // Restart
+		gui.proxyRestart()
+	case 3: // Reboot
+		gui.proxyReboot()
+	case 4: // Stop
+		gui.proxyStop()
+	case 5: // Start
+		gui.proxyStart()
+	case 6: // Back
+		gui.screen = ServerScreenAppMenu
 		gui.selectedItem = 0
 	}
 }
