@@ -57,9 +57,12 @@ brews:
     repository:
       owner: shuvro
       name: homebrew-lazykamal
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: "https://github.com/shuvro/lazykamal"
     description: "Lazydocker-style TUI for Kamal-deployed apps"
     license: "MIT"
     skip_upload: auto
     install: |
       bin.install "lazykamal"
+    test: |
+      system "#{bin}/lazykamal", "--version"
