@@ -222,17 +222,25 @@ Lazykamal groups them as:
     └─ postgres: 1 container(s)
 ```
 
-### Recognized accessory suffixes
+### Smart accessory detection
 
-Lazykamal recognizes these common accessory naming patterns:
+Lazykamal uses **smart detection** - it doesn't rely on a hardcoded list of suffixes. Instead:
 
-| Category | Suffixes |
-|----------|----------|
-| **Databases** | `-postgres`, `-postgresql`, `-mysql`, `-mariadb`, `-mongodb` |
-| **Caching** | `-redis`, `-memcached`, `-elasticsearch` |
-| **Queues** | `-rabbitmq`, `-sidekiq`, `-worker`, `-jobs` |
-| **Scheduled** | `-cron`, `-scheduler` |
-| **Services** | `-backend`, `-api`, `-frontend`, `-web` |
+> **Rule:** If service `myapp` exists and service `myapp-anything` exists, then `myapp-anything` is an accessory of `myapp`.
+
+This means **any** accessory name works:
+
+| Service Names on Server | Grouped As |
+|------------------------|------------|
+| `myapp`, `myapp-postgres` | `myapp` + postgres accessory |
+| `myapp`, `myapp-meilisearch` | `myapp` + meilisearch accessory |
+| `myapp`, `myapp-custom-worker` | `myapp` + custom-worker accessory |
+| `myapp`, `myapp-foo-bar-baz` | `myapp` + foo-bar-baz accessory |
+| `my-cool-app` (alone) | `my-cool-app` as main app |
+
+The detection also handles nested hyphens correctly:
+- `myapp-foo-bar` with `myapp` existing → accessory `foo-bar` of `myapp`
+- `my-app-redis` with `my-app` existing → accessory `redis` of `my-app`
 
 ### Actions in Server Mode
 

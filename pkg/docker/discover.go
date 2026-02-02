@@ -123,39 +123,17 @@ func parseLabels(labelsStr string) map[string]string {
 	return labels
 }
 
-// Known accessory suffixes - Kamal uses service names like "myapp-postgres"
-var accessorySuffixes = []string{
-	"-postgres", "-postgresql", "-mysql", "-mariadb", "-redis",
-	"-memcached", "-mongodb", "-elasticsearch", "-rabbitmq",
-	"-sidekiq", "-worker", "-jobs", "-cron", "-scheduler",
-	"-backend", "-api", "-frontend", "-web",
-}
-
-// parseServiceName extracts base app name and accessory type from service name
-// e.g., "repoengine-postgres" -> ("repoengine", "postgres")
-// e.g., "repoengine" -> ("repoengine", "")
-func parseServiceName(service string) (baseApp string, accessoryType string) {
-	for _, suffix := range accessorySuffixes {
-		if strings.HasSuffix(service, suffix) {
-			base := strings.TrimSuffix(service, suffix)
-			accType := strings.TrimPrefix(suffix, "-")
-			return base, accType
-		}
-	}
-	return service, ""
-}
-
 // groupContainers groups containers into apps by service and destination
+// Uses smart detection: if "myapp" exists and "myapp-anything" exists,
+// then "myapp-anything" is treated as an accessory of "myapp"
 func groupContainers(containers []Container) []App {
-	// First pass: collect all unique base app names
-	baseApps := make(map[string]bool)
+	// First pass: collect all service names
+	allServices := make(map[string]bool)
 	for _, c := range containers {
 		service := c.Labels["service"]
-		if service == "" {
-			continue
+		if service != "" {
+			allServices[service] = true
 		}
-		baseApp, _ := parseServiceName(service)
-		baseApps[baseApp] = true
 	}
 
 	// Map: baseApp -> destination -> app
@@ -172,18 +150,8 @@ func groupContainers(containers []Container) []App {
 			destination = "production"
 		}
 
-		// Parse service name to get base app and accessory type
-		baseApp, accessoryType := parseServiceName(service)
-
-		// Check if this is actually a main app (exists as a base app in our list)
-		// This handles cases where "myapp-backend" is a main app, not an accessory
-		isMainApp := baseApps[service]
-
-		// If the service itself is a known base app, treat it as main app
-		if isMainApp {
-			baseApp = service
-			accessoryType = ""
-		}
+		// Smart detection: find if this service is an accessory of another
+		baseApp, accessoryType := detectBaseApp(service, allServices)
 
 		// Initialize app map
 		if appMap[baseApp] == nil {
@@ -198,7 +166,7 @@ func groupContainers(containers []Container) []App {
 
 		app := appMap[baseApp][destination]
 
-		// Use role label if present, otherwise use parsed accessory type
+		// Use role label if present, otherwise use detected accessory type
 		role := c.Labels["role"]
 		if role == "" {
 			role = accessoryType
@@ -235,6 +203,38 @@ func groupContainers(containers []Container) []App {
 	}
 
 	return apps
+}
+
+// detectBaseApp determines if a service is a main app or an accessory
+// Logic: if "myapp" exists and we see "myapp-something", then
+// "myapp-something" is an accessory of "myapp"
+//
+// Examples:
+//   - "repoengine" with no "repoengine" parent -> main app
+//   - "repoengine-postgres" with "repoengine" existing -> accessory
+//   - "repoengine-custom-worker" with "repoengine" existing -> accessory
+//   - "my-cool-app" with no "my-cool" or "my" existing -> main app
+func detectBaseApp(service string, allServices map[string]bool) (baseApp string, accessoryType string) {
+	// If this service name contains a hyphen, check if a parent exists
+	// We try progressively shorter prefixes
+	// e.g., "myapp-foo-bar" -> try "myapp-foo", then "myapp"
+	
+	parts := strings.Split(service, "-")
+	
+	// Try each possible prefix (from longest to shortest)
+	for i := len(parts) - 1; i > 0; i-- {
+		potentialBase := strings.Join(parts[:i], "-")
+		
+		// Check if this potential base exists as a standalone service
+		if allServices[potentialBase] {
+			// Found a parent! This service is an accessory
+			accessory := strings.Join(parts[i:], "-")
+			return potentialBase, accessory
+		}
+	}
+	
+	// No parent found - this is a main app
+	return service, ""
 }
 
 // checkProxyStatus checks if kamal-proxy is running for the app
