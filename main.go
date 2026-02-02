@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/jroimartin/gocui"
@@ -70,6 +71,30 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Handle --server flag for server mode
+	for i, arg := range os.Args[1:] {
+		if arg == "--server" || arg == "-s" {
+			if i+2 >= len(os.Args) {
+				fmt.Fprintln(os.Stderr, "Error: --server requires a host argument")
+				fmt.Fprintln(os.Stderr, "Usage: lazykamal --server [user@]host[:port]")
+				os.Exit(1)
+			}
+			host := os.Args[i+2]
+			runServerMode(host)
+			os.Exit(0)
+		}
+		if strings.HasPrefix(arg, "--server=") {
+			host := strings.TrimPrefix(arg, "--server=")
+			runServerMode(host)
+			os.Exit(0)
+		}
+		if strings.HasPrefix(arg, "-s=") {
+			host := strings.TrimPrefix(arg, "-s=")
+			runServerMode(host)
+			os.Exit(0)
+		}
+	}
+
 	// Check that kamal is installed before starting the TUI
 	if err := checkKamalInstalled(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
@@ -117,27 +142,68 @@ func printHelp() {
 	fmt.Println(`Lazykamal - A lazydocker-style TUI for Kamal deployments
 
 Usage:
-  lazykamal [path]      Start TUI in the specified directory
-  lazykamal             Start TUI in the current directory
+  lazykamal [path]              Project mode: Start TUI in the specified directory
+  lazykamal                     Project mode: Start TUI in the current directory
+  lazykamal --server HOST       Server mode: Connect to server and discover all apps
 
 Options:
   -h, --help            Show this help message
   -v, --version         Show version information
+  -s, --server HOST     Server mode: SSH to HOST and show all Kamal apps
   --upgrade             Upgrade to the latest version
   --check-update        Check if an update is available
   --uninstall           Remove lazykamal from your system
+
+Server Mode Examples:
+  lazykamal --server 100.70.90.101
+  lazykamal --server user@myserver.com
+  lazykamal -s deploy@production:2222
 
 Keyboard Shortcuts:
   ↑/↓         Navigate menus
   Enter       Select item / Execute command
   m           Open main menu
   b / Esc     Go back
-  r           Refresh destinations
+  r           Refresh
+  j/k         Scroll log down/up
+  J/K         Scroll status down/up
   c           Clear log
   ?           Show help overlay
   q           Quit
 
 For more information, visit: https://github.com/shuvro/lazykamal`)
+}
+
+func runServerMode(host string) {
+	fmt.Printf("Connecting to %s...\n", host)
+
+	g, err := gui.NewServerMode(version, host)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		os.Exit(1)
+	}
+
+	// Setup graceful shutdown
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	// Run in goroutine so we can handle signals
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- g.Run()
+	}()
+
+	// Wait for either GUI exit or signal
+	select {
+	case err := <-errCh:
+		if err != nil && err != gocui.ErrQuit {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			os.Exit(1)
+		}
+	case sig := <-sigCh:
+		fmt.Fprintf(os.Stderr, "\nReceived %s, shutting down...\n", sig)
+		os.Exit(0)
+	}
 }
 
 func doUninstall() error {
