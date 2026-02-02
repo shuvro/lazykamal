@@ -9,6 +9,7 @@ import (
 
 	"github.com/jroimartin/gocui"
 	"github.com/shuvro/lazykamal/pkg/gui"
+	"github.com/shuvro/lazykamal/pkg/upgrade"
 )
 
 var version = "dev"
@@ -32,6 +33,31 @@ func main() {
 	// Handle --help flag
 	if len(os.Args) == 2 && (os.Args[1] == "--help" || os.Args[1] == "-h") {
 		printHelp()
+		os.Exit(0)
+	}
+
+	// Handle --upgrade flag
+	if len(os.Args) == 2 && (os.Args[1] == "--upgrade" || os.Args[1] == "upgrade") {
+		if err := upgrade.DoUpgrade(version); err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
+	// Handle --check-update flag
+	if len(os.Args) == 2 && os.Args[1] == "--check-update" {
+		latest, err := upgrade.GetLatestVersion()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			os.Exit(1)
+		}
+		if upgrade.NeedsUpdate(version, latest) {
+			fmt.Printf("Update available: %s → %s\n", version, latest)
+			fmt.Println("Run 'lazykamal --upgrade' to update")
+		} else {
+			fmt.Printf("Already at latest version (%s)\n", version)
+		}
 		os.Exit(0)
 	}
 
@@ -88,6 +114,8 @@ Usage:
 Options:
   -h, --help            Show this help message
   -v, --version         Show version information
+  --upgrade             Upgrade to the latest version
+  --check-update        Check if an update is available
 
 Keyboard Shortcuts:
   ↑/↓         Navigate menus
