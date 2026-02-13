@@ -3,11 +3,16 @@ package kamal
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os/exec"
 	"strings"
+	"time"
 )
+
+// DefaultCommandTimeout is the maximum time a blocking kamal command may run.
+const DefaultCommandTimeout = 10 * time.Minute
 
 // RunOptions are common options for Kamal CLI.
 type RunOptions struct {
@@ -83,6 +88,60 @@ func RunKamal(subcommand []string, opts RunOptions) (Result, error) {
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		code = exitErr.ExitCode()
 		// Non-zero exit is not an error for us - we capture it in ExitCode
+	} else if err != nil {
+		return Result{}, err
+	}
+	return Result{
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
+		ExitCode: code,
+	}, nil
+}
+
+// RunKamalWithStop runs the kamal CLI with cancellation support (via stopCh) and
+// a 10-minute timeout. If stopCh is closed, the command is killed immediately.
+// If stopCh is nil, only the timeout applies.
+func RunKamalWithStop(subcommand []string, opts RunOptions, stopCh <-chan struct{}) (Result, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultCommandTimeout)
+	defer cancel()
+
+	// If a stop channel is provided, wire it into the context.
+	if stopCh != nil {
+		go func() {
+			select {
+			case <-stopCh:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+	}
+
+	args := append(subcommand, buildGlobalArgs(opts)...)
+	cmd := exec.CommandContext(ctx, "kamal", args...)
+	cmd.Dir = opts.Cwd
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+
+	if ctx.Err() == context.DeadlineExceeded {
+		return Result{
+			Stdout:   stdout.String(),
+			Stderr:   stderr.String(),
+			ExitCode: -1,
+		}, fmt.Errorf("command timed out after %s", DefaultCommandTimeout)
+	}
+	if ctx.Err() == context.Canceled {
+		return Result{
+			Stdout:   stdout.String(),
+			Stderr:   stderr.String(),
+			ExitCode: -1,
+		}, fmt.Errorf("command cancelled")
+	}
+
+	code := 0
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		code = exitErr.ExitCode()
 	} else if err != nil {
 		return Result{}, err
 	}

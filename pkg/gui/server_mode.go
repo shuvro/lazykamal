@@ -37,6 +37,10 @@ type ServerGUI struct {
 	cmdStartTime      time.Time
 	spinner           *Spinner
 	cmdMu             sync.Mutex
+	cmdStopCh         chan struct{}
+	// Confirmation dialog
+	confirm    *confirmState
+	prevScreen ServerScreen
 	// Live log streaming
 	streamMu           sync.Mutex
 	streamingLogs      bool
@@ -54,6 +58,7 @@ const (
 	ServerScreenActionsMenu // Submenu: Start/Stop/Restart/etc
 	ServerScreenProxyMenu   // Submenu: Proxy operations
 	ServerScreenHelp
+	ServerScreenConfirm
 )
 
 // NewServerMode creates a new server mode GUI
@@ -94,6 +99,7 @@ func NewServerMode(version, host string) (*ServerGUI, error) {
 	gui.spinner = NewSpinner("", func() {
 		g.Update(func(g *gocui.Gui) error { return nil })
 	})
+	gui.spinner.Start()
 
 	g.SetManagerFunc(gui.layout)
 	g.Cursor = false
@@ -164,6 +170,11 @@ func (gui *ServerGUI) layout(g *gocui.Gui) error {
 	}
 	gui.renderLog(g)
 
+	// Confirm overlay
+	if gui.screen == ServerScreenConfirm {
+		return gui.renderConfirmDialog(g)
+	}
+
 	// Help overlay
 	if gui.screen == ServerScreenHelp {
 		return gui.renderHelpOverlay(g)
@@ -195,7 +206,7 @@ func (gui *ServerGUI) renderHeader(g *gocui.Gui) {
 		status = cyan(gui.spinner.Frame()) + " Streaming logs " + dim("(Esc to stop)")
 	} else if isRunning {
 		elapsed := time.Since(cmdStart)
-		status = yellow(gui.spinner.Frame()) + " " + cmdName + " " + dim(formatDuration(elapsed))
+		status = yellow(gui.spinner.Frame()) + " " + cmdName + " " + dim(formatDuration(elapsed)) + " " + dim("Ctrl+X cancel")
 	}
 
 	// Show mode indicator prominently
@@ -636,7 +647,8 @@ func (gui *ServerGUI) renderHelpOverlay(g *gocui.Gui) error {
 	fmt.Fprintln(v, "   ↑/↓       Navigate       j/k       Scroll logs")
 	fmt.Fprintln(v, "   Enter     Select         c         Clear log")
 	fmt.Fprintln(v, "   b/Esc     Go back        r         Refresh apps")
-	fmt.Fprintln(v, "   ?         Help           q         Quit")
+	fmt.Fprintln(v, "   Ctrl+X    Cancel cmd     ?         Help")
+	fmt.Fprintln(v, "   q         Quit")
 	fmt.Fprintln(v, "")
 	fmt.Fprintln(v, dim("  Press ? or Esc to close"))
 
@@ -647,7 +659,7 @@ func (gui *ServerGUI) appendLog(lines []string) {
 	gui.logMu.Lock()
 	defer gui.logMu.Unlock()
 	for _, line := range lines {
-		gui.logLines = append(gui.logLines, timestampedLine(line))
+		gui.logLines = append(gui.logLines, timestampedLine(sanitizeLogLine(line)))
 	}
 	if len(gui.logLines) > 1000 {
 		gui.logLines = gui.logLines[len(gui.logLines)-1000:]
@@ -668,6 +680,17 @@ func (gui *ServerGUI) logInfo(msg string) {
 	gui.appendLog([]string{statusLine("info", msg)})
 }
 
+// cancelCommand cancels the currently running server command if any.
+func (gui *ServerGUI) cancelCommand() {
+	gui.cmdMu.Lock()
+	defer gui.cmdMu.Unlock()
+	if gui.running && gui.cmdStopCh != nil {
+		gui.logInfo("Cancelled: " + gui.runningCmd)
+		close(gui.cmdStopCh)
+		gui.cmdStopCh = nil
+	}
+}
+
 // keybindings sets up server mode keybindings
 func (gui *ServerGUI) keybindings(g *gocui.Gui) error {
 	// Quit
@@ -678,6 +701,14 @@ func (gui *ServerGUI) keybindings(g *gocui.Gui) error {
 	}
 	if err := g.SetKeybinding("", 'q', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		return gocui.ErrQuit
+	}); err != nil {
+		return err
+	}
+
+	// Cancel running command
+	if err := g.SetKeybinding("", gocui.KeyCtrlX, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		gui.cancelCommand()
+		return nil
 	}); err != nil {
 		return err
 	}
@@ -719,6 +750,45 @@ func (gui *ServerGUI) keybindings(g *gocui.Gui) error {
 		return err
 	}
 	if err := g.SetKeybinding("", 'k', gocui.ModNone, gui.keyScrollUp); err != nil {
+		return err
+	}
+
+	// Confirm dialog keybindings
+	if err := g.SetKeybinding(viewServerConfirm, gocui.KeyArrowLeft, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		gui.confirmLeft()
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding(viewServerConfirm, gocui.KeyArrowRight, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		gui.confirmRight()
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding(viewServerConfirm, gocui.KeyEnter, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		gui.confirmEnter()
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding(viewServerConfirm, gocui.KeyEsc, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		gui.closeConfirm()
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding(viewServerConfirm, 'n', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		gui.closeConfirm()
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding(viewServerConfirm, 'y', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		gui.confirm.Selected = 0
+		gui.confirmEnter()
+		return nil
+	}); err != nil {
 		return err
 	}
 
@@ -788,30 +858,32 @@ func (gui *ServerGUI) keyContainerRemove(g *gocui.Gui, v *gocui.View) error {
 }
 
 func (gui *ServerGUI) removeContainer(ci ContainerInfo) {
-	gui.logInfo(fmt.Sprintf("Removing %s...", ci.Container.Name))
-	gui.cmdMu.Lock()
-	gui.running = true
-	gui.runningCmd = "Remove"
-	gui.cmdStartTime = time.Now()
-	gui.cmdMu.Unlock()
+	gui.showConfirm("Confirm Remove", fmt.Sprintf("Remove container %s?", ci.Container.Name), func() {
+		gui.logInfo(fmt.Sprintf("Removing %s...", ci.Container.Name))
+		gui.cmdMu.Lock()
+		gui.running = true
+		gui.runningCmd = "Remove"
+		gui.cmdStartTime = time.Now()
+		gui.cmdMu.Unlock()
 
-	go func() {
-		defer func() {
-			gui.cmdMu.Lock()
-			gui.running = false
-			gui.cmdMu.Unlock()
+		go func() {
+			defer func() {
+				gui.cmdMu.Lock()
+				gui.running = false
+				gui.cmdMu.Unlock()
+			}()
+			cmd := fmt.Sprintf("docker rm %s", ci.Container.ID)
+			if _, err := gui.client.Run(cmd); err != nil {
+				gui.logError(fmt.Sprintf("Failed to remove %s: %s", ci.Container.Name, err.Error()))
+			} else {
+				gui.cmdMu.Lock()
+				start := gui.cmdStartTime
+				gui.cmdMu.Unlock()
+				gui.logSuccess(fmt.Sprintf("Removed %s in %s", ci.Container.Name, formatDuration(time.Since(start))))
+				gui.refreshAppsAndContainers()
+			}
 		}()
-		cmd := fmt.Sprintf("docker rm %s", ci.Container.ID)
-		if _, err := gui.client.Run(cmd); err != nil {
-			gui.logError(fmt.Sprintf("Failed to remove %s: %s", ci.Container.Name, err.Error()))
-		} else {
-			gui.cmdMu.Lock()
-			start := gui.cmdStartTime
-			gui.cmdMu.Unlock()
-			gui.logSuccess(fmt.Sprintf("Removed %s in %s", ci.Container.Name, formatDuration(time.Since(start))))
-			gui.refreshAppsAndContainers()
-		}
-	}()
+	}, nil)
 }
 
 // refreshAppsAndContainers refreshes apps from server and rebuilds container list
@@ -908,6 +980,11 @@ func (gui *ServerGUI) keyEnter(g *gocui.Gui, v *gocui.View) error {
 }
 
 func (gui *ServerGUI) keyBack(g *gocui.Gui, v *gocui.View) error {
+	if gui.screen == ServerScreenConfirm {
+		gui.closeConfirm()
+		return nil
+	}
+
 	// Stop log streaming if active
 	gui.streamMu.Lock()
 	isStreaming := gui.streamingLogs
@@ -1142,8 +1219,14 @@ func (gui *ServerGUI) viewContainerLogs(ci ContainerInfo) {
 	gui.streamMu.Unlock()
 
 	go func() {
+		lastUpdate := time.Now()
+		throttle := 80 * time.Millisecond
 		err := docker.StreamContainerLogs(gui.client, ci.Container.ID, func(line string) {
 			gui.appendLog([]string{line})
+			if time.Since(lastUpdate) < throttle {
+				return
+			}
+			lastUpdate = time.Now()
 			gui.g.Update(func(g *gocui.Gui) error { return nil })
 		}, stopCh)
 
@@ -1169,25 +1252,27 @@ func (gui *ServerGUI) stopLogStream() {
 }
 
 func (gui *ServerGUI) stopContainer(ci ContainerInfo) {
-	gui.logInfo(fmt.Sprintf("Stopping %s...", ci.Container.Name))
-	gui.cmdMu.Lock()
-	gui.running = true
-	gui.runningCmd = "Stop"
-	gui.cmdStartTime = time.Now()
-	gui.cmdMu.Unlock()
+	gui.showConfirm("Confirm Stop", fmt.Sprintf("Stop container %s?", ci.Container.Name), func() {
+		gui.logInfo(fmt.Sprintf("Stopping %s...", ci.Container.Name))
+		gui.cmdMu.Lock()
+		gui.running = true
+		gui.runningCmd = "Stop"
+		gui.cmdStartTime = time.Now()
+		gui.cmdMu.Unlock()
 
-	go func() {
-		defer func() {
-			gui.cmdMu.Lock()
-			gui.running = false
-			gui.cmdMu.Unlock()
+		go func() {
+			defer func() {
+				gui.cmdMu.Lock()
+				gui.running = false
+				gui.cmdMu.Unlock()
+			}()
+			if err := docker.StopContainer(gui.client, ci.Container.ID); err != nil {
+				gui.logError(fmt.Sprintf("Failed to stop %s: %s", ci.Container.Name, err.Error()))
+			} else {
+				gui.logSuccess(fmt.Sprintf("Stopped %s", ci.Container.Name))
+			}
 		}()
-		if err := docker.StopContainer(gui.client, ci.Container.ID); err != nil {
-			gui.logError(fmt.Sprintf("Failed to stop %s: %s", ci.Container.Name, err.Error()))
-		} else {
-			gui.logSuccess(fmt.Sprintf("Stopped %s", ci.Container.Name))
-		}
-	}()
+	}, nil)
 }
 
 func (gui *ServerGUI) startContainer(ci ContainerInfo) {
@@ -1251,31 +1336,33 @@ func (gui *ServerGUI) stopApp(app docker.App) {
 		return
 	}
 
-	gui.logInfo(fmt.Sprintf("Stopping %s...", app.Service))
-	gui.cmdMu.Lock()
-	gui.running = true
-	gui.runningCmd = "Stop"
-	gui.cmdStartTime = time.Now()
-	gui.cmdMu.Unlock()
-
-	go func() {
-		defer func() {
-			gui.cmdMu.Lock()
-			gui.running = false
-			gui.cmdMu.Unlock()
-		}()
-		for _, c := range app.Containers {
-			if err := docker.StopContainer(gui.client, c.ID); err != nil {
-				gui.logError(fmt.Sprintf("Failed to stop %s: %s", c.Name, err.Error()))
-			} else {
-				gui.logSuccess(fmt.Sprintf("Stopped %s", c.Name))
-			}
-		}
+	gui.showConfirm("Confirm Stop", fmt.Sprintf("Stop all containers for %s?", app.Service), func() {
+		gui.logInfo(fmt.Sprintf("Stopping %s...", app.Service))
 		gui.cmdMu.Lock()
-		start := gui.cmdStartTime
+		gui.running = true
+		gui.runningCmd = "Stop"
+		gui.cmdStartTime = time.Now()
 		gui.cmdMu.Unlock()
-		gui.logSuccess(fmt.Sprintf("Stop completed in %s", formatDuration(time.Since(start))))
-	}()
+
+		go func() {
+			defer func() {
+				gui.cmdMu.Lock()
+				gui.running = false
+				gui.cmdMu.Unlock()
+			}()
+			for _, c := range app.Containers {
+				if err := docker.StopContainer(gui.client, c.ID); err != nil {
+					gui.logError(fmt.Sprintf("Failed to stop %s: %s", c.Name, err.Error()))
+				} else {
+					gui.logSuccess(fmt.Sprintf("Stopped %s", c.Name))
+				}
+			}
+			gui.cmdMu.Lock()
+			start := gui.cmdStartTime
+			gui.cmdMu.Unlock()
+			gui.logSuccess(fmt.Sprintf("Stop completed in %s", formatDuration(time.Since(start))))
+		}()
+	}, nil)
 }
 
 func (gui *ServerGUI) startApp(app docker.App) {
@@ -1420,8 +1507,14 @@ func (gui *ServerGUI) viewProxyLogs() {
 		}
 
 		proxyID = strings.TrimSpace(proxyID)
+		lastUpdate := time.Now()
+		throttle := 80 * time.Millisecond
 		err = docker.StreamContainerLogs(gui.client, proxyID, func(line string) {
 			gui.appendLog([]string{line})
+			if time.Since(lastUpdate) < throttle {
+				return
+			}
+			lastUpdate = time.Now()
 			gui.g.Update(func(g *gocui.Gui) error { return nil })
 		}, stopCh)
 
@@ -1665,34 +1758,36 @@ func (gui *ServerGUI) proxyReboot() {
 }
 
 func (gui *ServerGUI) proxyStop() {
-	gui.logInfo("Stopping kamal-proxy...")
-	gui.cmdMu.Lock()
-	gui.running = true
-	gui.runningCmd = "Proxy Stop"
-	gui.cmdStartTime = time.Now()
-	gui.cmdMu.Unlock()
+	gui.showConfirm("Confirm Proxy Stop", "Stop kamal-proxy?", func() {
+		gui.logInfo("Stopping kamal-proxy...")
+		gui.cmdMu.Lock()
+		gui.running = true
+		gui.runningCmd = "Proxy Stop"
+		gui.cmdStartTime = time.Now()
+		gui.cmdMu.Unlock()
 
-	go func() {
-		defer func() {
-			gui.cmdMu.Lock()
-			gui.running = false
-			gui.cmdMu.Unlock()
+		go func() {
+			defer func() {
+				gui.cmdMu.Lock()
+				gui.running = false
+				gui.cmdMu.Unlock()
+			}()
+			proxyID, err := gui.getProxyContainerID()
+			if err != nil {
+				gui.logError(err.Error())
+				return
+			}
+
+			if err := docker.StopContainer(gui.client, proxyID); err != nil {
+				gui.logError(fmt.Sprintf("Failed to stop proxy: %s", err.Error()))
+			} else {
+				gui.cmdMu.Lock()
+				start := gui.cmdStartTime
+				gui.cmdMu.Unlock()
+				gui.logSuccess(fmt.Sprintf("Proxy stopped in %s", formatDuration(time.Since(start))))
+			}
 		}()
-		proxyID, err := gui.getProxyContainerID()
-		if err != nil {
-			gui.logError(err.Error())
-			return
-		}
-
-		if err := docker.StopContainer(gui.client, proxyID); err != nil {
-			gui.logError(fmt.Sprintf("Failed to stop proxy: %s", err.Error()))
-		} else {
-			gui.cmdMu.Lock()
-			start := gui.cmdStartTime
-			gui.cmdMu.Unlock()
-			gui.logSuccess(fmt.Sprintf("Proxy stopped in %s", formatDuration(time.Since(start))))
-		}
-	}()
+	}, nil)
 }
 
 func (gui *ServerGUI) proxyStart() {

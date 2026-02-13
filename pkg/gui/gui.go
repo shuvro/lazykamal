@@ -98,6 +98,7 @@ type GUI struct {
 	liveLogsActive bool
 	liveLogsMu     sync.Mutex
 	cmdMu          sync.Mutex
+	cmdStopCh      chan struct{}
 	savedTermState *term.State
 	stdinFd        int
 	editor         *editorState
@@ -193,9 +194,9 @@ func (gui *GUI) layout(g *gocui.Gui) error {
 	if isRunning {
 		elapsed := time.Since(cmdStart)
 		if sp != nil {
-			statusIndicator = fmt.Sprintf(" %s %s (%s)", sp.Frame(), cmdName, formatDuration(elapsed))
+			statusIndicator = fmt.Sprintf(" %s %s (%s) %s", sp.Frame(), cmdName, formatDuration(elapsed), dim("Ctrl+X cancel"))
 		} else {
-			statusIndicator = fmt.Sprintf(" %s %s (%s)", yellow(iconRunning), cmdName, formatDuration(elapsed))
+			statusIndicator = fmt.Sprintf(" %s %s (%s) %s", yellow(iconRunning), cmdName, formatDuration(elapsed), dim("Ctrl+X cancel"))
 		}
 	} else if live {
 		statusIndicator = " " + green(iconPlay) + " Live logs (Esc to stop)"
@@ -314,7 +315,8 @@ func (gui *GUI) renderHelpOverlay(g *gocui.Gui) error {
    Esc / b     Go back          m    Main menu
    r           Refresh          c    Clear log
    j/k         Scroll log       J/K  Scroll status
-   q           Quit             ?    This help
+   Ctrl+X      Cancel command   q    Quit
+   ?           This help
 
  %s
  ──────────────────────────────────────────────
@@ -725,7 +727,7 @@ func (gui *GUI) appendLog(lines []string) {
 	defer gui.logMu.Unlock()
 	for _, line := range lines {
 		// Add timestamp to each line
-		gui.logLines = append(gui.logLines, timestampedLine(line))
+		gui.logLines = append(gui.logLines, timestampedLine(sanitizeLogLine(line)))
 	}
 	if len(gui.logLines) > logBufLive {
 		gui.logLines = gui.logLines[len(gui.logLines)-logBufLive:]
@@ -851,42 +853,14 @@ func (gui *GUI) execConfig() {
 		}
 	case 2: // Redeploy
 		opts := gui.runOpts()
-		gui.cmdMu.Lock()
-		gui.running = true
-		gui.cmdMu.Unlock()
-		go func() {
-			defer func() {
-				gui.cmdMu.Lock()
-				gui.running = false
-				gui.cmdMu.Unlock()
-			}()
-			res, err := kamal.Redeploy(opts)
-			if err != nil {
-				gui.appendLog([]string{"Error: " + err.Error()})
-				return
-			}
-			gui.appendLogFromResult(res)
-			gui.g.Update(func(*gocui.Gui) error { return nil })
-		}()
+		gui.runCommand("Redeploy", func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"redeploy"}, opts, stopCh)
+		})
 	case 3: // App restart
 		opts := gui.runOpts()
-		gui.cmdMu.Lock()
-		gui.running = true
-		gui.cmdMu.Unlock()
-		go func() {
-			defer func() {
-				gui.cmdMu.Lock()
-				gui.running = false
-				gui.cmdMu.Unlock()
-			}()
-			res, err := kamal.AppRestart(opts)
-			if err != nil {
-				gui.appendLog([]string{"Error: " + err.Error()})
-				return
-			}
-			gui.appendLogFromResult(res)
-			gui.g.Update(func(*gocui.Gui) error { return nil })
-		}()
+		gui.runCommand("App Restart", func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"app", "restart"}, opts, stopCh)
+		})
 	}
 }
 
@@ -916,6 +890,13 @@ func (gui *GUI) keybindings(g *gocui.Gui) error {
 		return err
 	}
 
+	// Global: Ctrl+X = cancel running command
+	if err := g.SetKeybinding("", gocui.KeyCtrlX, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		gui.cancelCommand()
+		return nil
+	}); err != nil {
+		return err
+	}
 	// Global: m = main menu from anywhere (except apps)
 	if err := g.SetKeybinding("", 'm', gocui.ModNone, gui.keyMain); err != nil {
 		return err
@@ -1312,21 +1293,25 @@ func (gui *GUI) keyEnter(g *gocui.Gui, v *gocui.View) error {
 	return nil
 }
 
-// runCommand executes a kamal command with spinner, timing, and proper logging
-func (gui *GUI) runCommand(name string, fn func() (kamal.Result, error)) {
+// runCommand executes a kamal command with spinner, timing, and proper logging.
+// It creates a stop channel that can be closed via Ctrl+X to cancel the command.
+// The fn receives a stopCh that will be closed on cancel/timeout.
+func (gui *GUI) runCommand(name string, fn func(stopCh <-chan struct{}) (kamal.Result, error)) {
 	gui.cmdMu.Lock()
 	gui.running = true
 	gui.runningCmd = name
 	gui.cmdStartTime = time.Now()
+	gui.cmdStopCh = make(chan struct{})
 
 	// Start spinner
 	gui.spinner = NewSpinner(name, func() {
 		gui.g.Update(func(*gocui.Gui) error { return nil })
 	})
 	gui.spinner.Start()
+	stopCh := gui.cmdStopCh
 	gui.cmdMu.Unlock()
 
-	gui.logInfo("Running: " + name)
+	gui.logInfo("Running: " + name + " " + dim("(Ctrl+X cancel)"))
 
 	go func() {
 		defer func() {
@@ -1335,11 +1320,12 @@ func (gui *GUI) runCommand(name string, fn func() (kamal.Result, error)) {
 			gui.spinner = nil
 			gui.running = false
 			gui.runningCmd = ""
+			gui.cmdStopCh = nil
 			gui.cmdMu.Unlock()
 			gui.g.Update(func(*gocui.Gui) error { return nil })
 		}()
 
-		res, err := fn()
+		res, err := fn(stopCh)
 		duration := time.Since(gui.cmdStartTime)
 
 		if err != nil {
@@ -1359,8 +1345,19 @@ func (gui *GUI) runCommand(name string, fn func() (kamal.Result, error)) {
 	}()
 }
 
+// cancelCommand cancels the currently running command if any.
+func (gui *GUI) cancelCommand() {
+	gui.cmdMu.Lock()
+	defer gui.cmdMu.Unlock()
+	if gui.running && gui.cmdStopCh != nil {
+		gui.logInfo("Cancelled: " + gui.runningCmd)
+		close(gui.cmdStopCh)
+		gui.cmdStopCh = nil
+	}
+}
+
 // runWithConfirm shows a confirmation dialog before running a destructive command
-func (gui *GUI) runWithConfirm(name string, message string, fn func() (kamal.Result, error)) {
+func (gui *GUI) runWithConfirm(name string, message string, fn func(stopCh <-chan struct{}) (kamal.Result, error)) {
 	gui.prevScreen = gui.screen
 	gui.showConfirm("Confirm "+name, message, func() {
 		gui.runCommand(name, fn)
@@ -1369,27 +1366,37 @@ func (gui *GUI) runWithConfirm(name string, message string, fn func() (kamal.Res
 
 func (gui *GUI) execDeploy() {
 	opts := gui.runOpts()
-	var fn func() (kamal.Result, error)
+	var fn func(stopCh <-chan struct{}) (kamal.Result, error)
 	var name string
 
 	switch gui.submenuIdx {
 	case 0:
 		name = "Deploy"
-		fn = func() (kamal.Result, error) { return kamal.Deploy(opts, false) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"deploy"}, opts, stopCh)
+		}
 	case 1:
 		name = "Deploy (skip push)"
-		fn = func() (kamal.Result, error) { return kamal.Deploy(opts, true) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"deploy", "--skip-push"}, opts, stopCh)
+		}
 	case 2:
 		name = "Redeploy"
-		fn = func() (kamal.Result, error) { return kamal.Redeploy(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"redeploy"}, opts, stopCh)
+		}
 	case 3:
 		name = "Rollback"
-		fn = func() (kamal.Result, error) { return kamal.Rollback(opts, "") }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"rollback"}, opts, stopCh)
+		}
 		gui.runWithConfirm(name, getDestructiveMessage(gui.screen, gui.submenuIdx), fn)
 		return
 	case 4:
 		name = "Setup"
-		fn = func() (kamal.Result, error) { return kamal.Setup(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"setup"}, opts, stopCh)
+		}
 	default:
 		return
 	}
@@ -1399,54 +1406,82 @@ func (gui *GUI) execDeploy() {
 
 func (gui *GUI) execApp() {
 	opts := gui.runOpts()
-	var fn func() (kamal.Result, error)
+	var fn func(stopCh <-chan struct{}) (kamal.Result, error)
 	var name string
 	needsConfirm := false
 
 	switch gui.submenuIdx {
 	case 0:
 		name = "App Boot"
-		fn = func() (kamal.Result, error) { return kamal.AppBoot(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"app", "boot"}, opts, stopCh)
+		}
 	case 1:
 		name = "App Start"
-		fn = func() (kamal.Result, error) { return kamal.AppStart(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"app", "start"}, opts, stopCh)
+		}
 	case 2:
 		name = "App Stop"
-		fn = func() (kamal.Result, error) { return kamal.AppStop(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"app", "stop"}, opts, stopCh)
+		}
 		needsConfirm = true
 	case 3:
 		name = "App Restart"
-		fn = func() (kamal.Result, error) { return kamal.AppRestart(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"app", "restart"}, opts, stopCh)
+		}
 	case 4:
 		name = "App Logs"
-		fn = func() (kamal.Result, error) { return kamal.AppLogs(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"app", "logs"}, opts, stopCh)
+		}
 	case 5:
 		name = "App Containers"
-		fn = func() (kamal.Result, error) { return kamal.AppContainers(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"app", "containers"}, opts, stopCh)
+		}
 	case 6:
 		name = "App Details"
-		fn = func() (kamal.Result, error) { return kamal.AppDetails(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"app", "details"}, opts, stopCh)
+		}
 	case 7:
 		name = "App Images"
-		fn = func() (kamal.Result, error) { return kamal.AppImages(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"app", "images"}, opts, stopCh)
+		}
 	case 8:
 		name = "App Version"
-		fn = func() (kamal.Result, error) { return kamal.AppVersion(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"app", "version"}, opts, stopCh)
+		}
 	case 9:
 		name = "App Stale Containers"
-		fn = func() (kamal.Result, error) { return kamal.AppStaleContainers(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"app", "stale_containers"}, opts, stopCh)
+		}
 	case 10:
 		name = "App Exec: whoami"
-		fn = func() (kamal.Result, error) { return kamal.AppExec(opts, "whoami") }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"app", "exec", "whoami"}, opts, stopCh)
+		}
 	case 11:
 		name = "App Maintenance"
-		fn = func() (kamal.Result, error) { return kamal.AppMaintenance(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"app", "maintenance"}, opts, stopCh)
+		}
 	case 12:
 		name = "App Live"
-		fn = func() (kamal.Result, error) { return kamal.AppLive(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"app", "live"}, opts, stopCh)
+		}
 	case 13:
 		name = "App Remove"
-		fn = func() (kamal.Result, error) { return kamal.AppRemove(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"app", "remove"}, opts, stopCh)
+		}
 		needsConfirm = true
 	case 14:
 		gui.startLiveLogs("app")
@@ -1464,19 +1499,25 @@ func (gui *GUI) execApp() {
 
 func (gui *GUI) execServer() {
 	opts := gui.runOpts()
-	var fn func() (kamal.Result, error)
+	var fn func(stopCh <-chan struct{}) (kamal.Result, error)
 	var name string
 
 	switch gui.submenuIdx {
 	case 0:
 		name = "Server Bootstrap"
-		fn = func() (kamal.Result, error) { return kamal.ServerBootstrap(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"server", "bootstrap"}, opts, stopCh)
+		}
 	case 1:
 		name = "Server Exec: date"
-		fn = func() (kamal.Result, error) { return kamal.ServerExec(opts, "date") }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"server", "exec", "date"}, opts, stopCh)
+		}
 	case 2:
 		name = "Server Exec: uptime"
-		fn = func() (kamal.Result, error) { return kamal.ServerExec(opts, "uptime") }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"server", "exec", "uptime"}, opts, stopCh)
+		}
 	default:
 		return
 	}
@@ -1486,43 +1527,63 @@ func (gui *GUI) execServer() {
 
 func (gui *GUI) execAccessory() {
 	opts := gui.runOpts()
-	var fn func() (kamal.Result, error)
+	var fn func(stopCh <-chan struct{}) (kamal.Result, error)
 	var name string
 	needsConfirm := false
 
 	switch gui.submenuIdx {
 	case 0:
 		name = "Accessory Boot All"
-		fn = func() (kamal.Result, error) { return kamal.AccessoryBoot(opts, "all") }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"accessory", "boot", "all"}, opts, stopCh)
+		}
 	case 1:
 		name = "Accessory Start All"
-		fn = func() (kamal.Result, error) { return kamal.AccessoryStart(opts, "all") }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"accessory", "start", "all"}, opts, stopCh)
+		}
 	case 2:
 		name = "Accessory Stop All"
-		fn = func() (kamal.Result, error) { return kamal.AccessoryStop(opts, "all") }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"accessory", "stop", "all"}, opts, stopCh)
+		}
 		needsConfirm = true
 	case 3:
 		name = "Accessory Restart All"
-		fn = func() (kamal.Result, error) { return kamal.AccessoryRestart(opts, "all") }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"accessory", "restart", "all"}, opts, stopCh)
+		}
 	case 4:
 		name = "Accessory Reboot All"
-		fn = func() (kamal.Result, error) { return kamal.AccessoryReboot(opts, "all") }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"accessory", "reboot", "all"}, opts, stopCh)
+		}
 	case 5:
 		name = "Accessory Remove All"
-		fn = func() (kamal.Result, error) { return kamal.AccessoryRemove(opts, "all") }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"accessory", "remove", "all"}, opts, stopCh)
+		}
 		needsConfirm = true
 	case 6:
 		name = "Accessory Details All"
-		fn = func() (kamal.Result, error) { return kamal.AccessoryDetails(opts, "all") }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"accessory", "details", "all"}, opts, stopCh)
+		}
 	case 7:
 		name = "Accessory Logs All"
-		fn = func() (kamal.Result, error) { return kamal.AccessoryLogs(opts, "all") }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"accessory", "logs", "all"}, opts, stopCh)
+		}
 	case 8:
 		name = "Accessory Exec All"
-		fn = func() (kamal.Result, error) { return kamal.AccessoryExec(opts, "all", "sh") }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"accessory", "exec", "all", "sh"}, opts, stopCh)
+		}
 	case 9:
 		name = "Accessory Upgrade"
-		fn = func() (kamal.Result, error) { return kamal.AccessoryUpgrade(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"accessory", "upgrade"}, opts, stopCh)
+		}
 	default:
 		return
 	}
@@ -1536,49 +1597,73 @@ func (gui *GUI) execAccessory() {
 
 func (gui *GUI) execProxy() {
 	opts := gui.runOpts()
-	var fn func() (kamal.Result, error)
+	var fn func(stopCh <-chan struct{}) (kamal.Result, error)
 	var name string
 	needsConfirm := false
 
 	switch gui.submenuIdx {
 	case 0:
 		name = "Proxy Boot"
-		fn = func() (kamal.Result, error) { return kamal.ProxyBoot(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"proxy", "boot"}, opts, stopCh)
+		}
 	case 1:
 		name = "Proxy Start"
-		fn = func() (kamal.Result, error) { return kamal.ProxyStart(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"proxy", "start"}, opts, stopCh)
+		}
 	case 2:
 		name = "Proxy Stop"
-		fn = func() (kamal.Result, error) { return kamal.ProxyStop(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"proxy", "stop"}, opts, stopCh)
+		}
 		needsConfirm = true
 	case 3:
 		name = "Proxy Restart"
-		fn = func() (kamal.Result, error) { return kamal.ProxyRestart(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"proxy", "restart"}, opts, stopCh)
+		}
 	case 4:
 		name = "Proxy Reboot"
-		fn = func() (kamal.Result, error) { return kamal.ProxyReboot(opts, false) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"proxy", "reboot"}, opts, stopCh)
+		}
 	case 5:
 		name = "Proxy Reboot (rolling)"
-		fn = func() (kamal.Result, error) { return kamal.ProxyReboot(opts, true) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"proxy", "reboot", "--rolling"}, opts, stopCh)
+		}
 	case 6:
 		name = "Proxy Logs"
-		fn = func() (kamal.Result, error) { return kamal.ProxyLogs(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"proxy", "logs"}, opts, stopCh)
+		}
 	case 7:
 		name = "Proxy Details"
-		fn = func() (kamal.Result, error) { return kamal.ProxyDetails(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"proxy", "details"}, opts, stopCh)
+		}
 	case 8:
 		name = "Proxy Remove"
-		fn = func() (kamal.Result, error) { return kamal.ProxyRemove(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"proxy", "remove"}, opts, stopCh)
+		}
 		needsConfirm = true
 	case 9:
 		name = "Proxy Boot Config Get"
-		fn = func() (kamal.Result, error) { return kamal.ProxyBootConfigGet(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"proxy", "boot_config", "get"}, opts, stopCh)
+		}
 	case 10:
 		name = "Proxy Boot Config Set"
-		fn = func() (kamal.Result, error) { return kamal.ProxyBootConfigSet(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"proxy", "boot_config", "set"}, opts, stopCh)
+		}
 	case 11:
 		name = "Proxy Boot Config Reset"
-		fn = func() (kamal.Result, error) { return kamal.ProxyBootConfigReset(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"proxy", "boot_config", "reset"}, opts, stopCh)
+		}
 	case 12:
 		gui.startLiveLogs("proxy")
 		return
@@ -1595,74 +1680,114 @@ func (gui *GUI) execProxy() {
 
 func (gui *GUI) execOther() {
 	opts := gui.runOpts()
-	var fn func() (kamal.Result, error)
+	var fn func(stopCh <-chan struct{}) (kamal.Result, error)
 	var name string
 	needsConfirm := false
 
 	switch gui.submenuIdx {
 	case 0:
 		name = "Prune"
-		fn = func() (kamal.Result, error) { return kamal.Prune(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"prune"}, opts, stopCh)
+		}
 		needsConfirm = true
 	case 1:
 		name = "Build"
-		fn = func() (kamal.Result, error) { return kamal.Build(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"build"}, opts, stopCh)
+		}
 	case 2:
 		name = "Config"
-		fn = func() (kamal.Result, error) { return kamal.Config(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"config"}, opts, stopCh)
+		}
 	case 3:
 		name = "Details"
-		fn = func() (kamal.Result, error) { return kamal.Details(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"details"}, opts, stopCh)
+		}
 	case 4:
 		name = "Audit"
-		fn = func() (kamal.Result, error) { return kamal.Audit(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"audit"}, opts, stopCh)
+		}
 	case 5:
 		name = "Lock Status"
-		fn = func() (kamal.Result, error) { return kamal.LockStatus(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"lock", "status"}, opts, stopCh)
+		}
 	case 6:
 		name = "Lock Acquire"
-		fn = func() (kamal.Result, error) { return kamal.LockAcquire(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"lock", "acquire"}, opts, stopCh)
+		}
 	case 7:
 		name = "Lock Release"
-		fn = func() (kamal.Result, error) { return kamal.LockRelease(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"lock", "release"}, opts, stopCh)
+		}
 	case 8:
 		name = "Lock Release (force)"
-		fn = func() (kamal.Result, error) { return kamal.LockReleaseForce(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"lock", "release", "--force"}, opts, stopCh)
+		}
 		needsConfirm = true
 	case 9:
 		name = "Registry Login"
-		fn = func() (kamal.Result, error) { return kamal.RegistryLogin(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"registry", "login"}, opts, stopCh)
+		}
 	case 10:
 		name = "Registry Logout"
-		fn = func() (kamal.Result, error) { return kamal.RegistryLogout(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"registry", "logout"}, opts, stopCh)
+		}
 	case 11:
 		name = "Secrets"
-		fn = func() (kamal.Result, error) { return kamal.Secrets(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"secrets"}, opts, stopCh)
+		}
 	case 12:
 		name = "Env Push"
-		fn = func() (kamal.Result, error) { return kamal.EnvPush(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"env", "push"}, opts, stopCh)
+		}
 	case 13:
 		name = "Env Pull"
-		fn = func() (kamal.Result, error) { return kamal.EnvPull(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"env", "pull"}, opts, stopCh)
+		}
 	case 14:
 		name = "Env Delete"
-		fn = func() (kamal.Result, error) { return kamal.EnvDelete(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"env", "delete"}, opts, stopCh)
+		}
 		needsConfirm = true
 	case 15:
 		name = "Docs"
-		fn = func() (kamal.Result, error) { return kamal.Docs(opts, "") }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"docs"}, opts, stopCh)
+		}
 	case 16:
 		name = "Help"
-		fn = func() (kamal.Result, error) { return kamal.Help(opts, "") }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"help"}, opts, stopCh)
+		}
 	case 17:
 		name = "Init"
-		fn = func() (kamal.Result, error) { return kamal.Init(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"init"}, opts, stopCh)
+		}
 	case 18:
 		name = "Upgrade"
-		fn = func() (kamal.Result, error) { return kamal.Upgrade(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"upgrade"}, opts, stopCh)
+		}
 	case 19:
 		name = "Version"
-		fn = func() (kamal.Result, error) { return kamal.Version(opts) }
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"version"}, opts, stopCh)
+		}
 	default:
 		return
 	}
