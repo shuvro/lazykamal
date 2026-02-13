@@ -27,21 +27,21 @@ func TestFindDeployConfigs(t *testing.T) {
 			expectedNames: nil,
 		},
 		{
-			name: "single production config",
+			name: "single base config only",
 			files: map[string]string{
 				"deploy.yml": "service: myapp\n",
 			},
 			expectedCount: 1,
-			expectedNames: []string{"production"},
+			expectedNames: []string{""},
 		},
 		{
-			name: "production and staging",
+			name: "base config with staging destination",
 			files: map[string]string{
 				"deploy.yml":         "service: myapp\n",
 				"deploy.staging.yml": "service: myapp-staging\n",
 			},
-			expectedCount: 2,
-			expectedNames: []string{"production", "staging"},
+			expectedCount: 1,
+			expectedNames: []string{"staging"},
 		},
 		{
 			name: "yaml extension",
@@ -49,7 +49,7 @@ func TestFindDeployConfigs(t *testing.T) {
 				"deploy.yaml": "service: myapp\n",
 			},
 			expectedCount: 1,
-			expectedNames: []string{"production"},
+			expectedNames: []string{""},
 		},
 		{
 			name: "multiple destinations",
@@ -58,8 +58,8 @@ func TestFindDeployConfigs(t *testing.T) {
 				"deploy.staging.yml":    "service: myapp-staging\n",
 				"deploy.production.yml": "service: myapp-prod\n",
 			},
-			expectedCount: 3,
-			expectedNames: []string{"production", "staging", "production"},
+			expectedCount: 2,
+			expectedNames: []string{"staging", "production"},
 		},
 		{
 			name: "ignores non-deploy files",
@@ -70,7 +70,7 @@ func TestFindDeployConfigs(t *testing.T) {
 				"deploy.backup": "old: config\n",
 			},
 			expectedCount: 1,
-			expectedNames: []string{"production"},
+			expectedNames: []string{""},
 		},
 	}
 
@@ -101,21 +101,22 @@ func TestFindDeployConfigs(t *testing.T) {
 			}
 
 			// Check that expected names are present
-			for _, expectedName := range tt.expectedNames {
-				found := false
-				for _, cfg := range configs {
-					if cfg.Name == expectedName {
-						found = true
-						break
-					}
+			if tt.expectedNames != nil {
+				names := make([]string, len(configs))
+				for i, c := range configs {
+					names[i] = c.Name
 				}
-				if !found && tt.expectedCount > 0 {
-					// Only check if we expect configs
-					names := make([]string, len(configs))
-					for i, c := range configs {
-						names[i] = c.Name
+				for _, expectedName := range tt.expectedNames {
+					found := false
+					for _, cfg := range configs {
+						if cfg.Name == expectedName {
+							found = true
+							break
+						}
 					}
-					t.Logf("Expected name %q not found in %v (this may be OK for multi-match tests)", expectedName, names)
+					if !found {
+						t.Errorf("Expected name %q not found in %v", expectedName, names)
+					}
 				}
 			}
 		})
@@ -163,6 +164,40 @@ image: myregistry/myapp
 	}
 }
 
+func TestFindDeployConfigs_ServiceFromBaseConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("Failed to create config dir: %v", err)
+	}
+
+	// Base config has the service name
+	base := "service: my-awesome-app\nimage: myregistry/myapp\n"
+	if err := os.WriteFile(filepath.Join(configDir, "deploy.yml"), []byte(base), 0644); err != nil {
+		t.Fatalf("Failed to create deploy.yml: %v", err)
+	}
+	// Destination file has only overrides, no service key
+	staging := "servers:\n  web:\n    - 10.0.0.1\n"
+	if err := os.WriteFile(filepath.Join(configDir, "deploy.staging.yml"), []byte(staging), 0644); err != nil {
+		t.Fatalf("Failed to create deploy.staging.yml: %v", err)
+	}
+
+	configs, err := FindDeployConfigs(tmpDir)
+	if err != nil {
+		t.Fatalf("FindDeployConfigs() error = %v", err)
+	}
+	if len(configs) != 1 {
+		t.Fatalf("Expected 1 config, got %d", len(configs))
+	}
+	if configs[0].Name != "staging" {
+		t.Errorf("Name = %q, want %q", configs[0].Name, "staging")
+	}
+	// Service should be inherited from base config
+	if configs[0].Service != "my-awesome-app" {
+		t.Errorf("Service = %q, want %q (should inherit from base config)", configs[0].Service, "my-awesome-app")
+	}
+}
+
 func TestSecretsPath(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -179,7 +214,7 @@ func TestSecretsPath(t *testing.T) {
 		{
 			name:     "production destination",
 			dest:     &DeployDestination{Name: "production"},
-			expected: filepath.Join(tmpDir, ".kamal", "secrets"),
+			expected: filepath.Join(tmpDir, ".kamal", "secrets-production"),
 		},
 		{
 			name:     "staging destination",
@@ -213,6 +248,10 @@ func TestDeployDestination_Label(t *testing.T) {
 		dest     DeployDestination
 		expected string
 	}{
+		{
+			dest:     DeployDestination{Service: "myapp", Name: ""},
+			expected: "myapp",
+		},
 		{
 			dest:     DeployDestination{Service: "myapp", Name: "production"},
 			expected: "myapp (production)",

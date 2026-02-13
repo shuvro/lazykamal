@@ -42,7 +42,7 @@ func buildGlobalArgs(opts RunOptions) []string {
 	if opts.ConfigFile != "" {
 		args = append(args, "--config-file", opts.ConfigFile)
 	}
-	if opts.Destination != "" && opts.Destination != "production" {
+	if opts.Destination != "" {
 		args = append(args, "--destination", opts.Destination)
 	}
 	if opts.Primary {
@@ -144,13 +144,12 @@ func RunKamalStream(subcommand []string, opts RunOptions, onLine func(line strin
 }
 
 // RunOpts builds RunOptions from CWD and optional destination.
+// Kamal resolves config files automatically from the working directory,
+// so we only need to pass the -d flag for named destinations.
 func RunOpts(cwd string, dest *DeployDestination) RunOptions {
 	o := RunOptions{Cwd: cwd}
-	if dest != nil {
-		o.ConfigFile = dest.ConfigPath
-		if dest.Name != "production" {
-			o.Destination = dest.Name
-		}
+	if dest != nil && dest.Name != "" {
+		o.Destination = dest.Name
 	}
 	return o
 }
@@ -391,7 +390,11 @@ func ProxyBootConfigReset(opts RunOptions) (Result, error) {
 }
 
 // Label returns a short label for the destination (e.g. "myapp (staging)").
+// For the base config (no destination), returns just the service name.
 func (d *DeployDestination) Label() string {
+	if d.Name == "" {
+		return d.Service
+	}
 	return fmt.Sprintf("%s (%s)", d.Service, d.Name)
 }
 

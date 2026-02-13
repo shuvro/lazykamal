@@ -31,11 +31,11 @@ func TestBuildGlobalArgs(t *testing.T) {
 			expected: []string{"--destination", "staging"},
 		},
 		{
-			name: "destination (production - should be ignored)",
+			name: "destination (production)",
 			opts: RunOptions{
 				Destination: "production",
 			},
-			expected: nil,
+			expected: []string{"--destination", "production"},
 		},
 		{
 			name: "primary flag",
@@ -218,15 +218,26 @@ func TestRunOpts(t *testing.T) {
 			expectedDest: "",
 		},
 		{
+			name: "base config (no destination)",
+			cwd:  "/project",
+			dest: &DeployDestination{
+				Name:       "",
+				ConfigPath: "/project/config/deploy.yml",
+			},
+			expectedCwd:  "/project",
+			expectedConf: "",
+			expectedDest: "",
+		},
+		{
 			name: "production destination",
 			cwd:  "/project",
 			dest: &DeployDestination{
 				Name:       "production",
-				ConfigPath: "/project/config/deploy.yml",
+				ConfigPath: "/project/config/deploy.production.yml",
 			},
 			expectedCwd:  "/project",
-			expectedConf: "/project/config/deploy.yml",
-			expectedDest: "",
+			expectedConf: "",
+			expectedDest: "production",
 		},
 		{
 			name: "staging destination",
@@ -236,7 +247,7 @@ func TestRunOpts(t *testing.T) {
 				ConfigPath: "/project/config/deploy.staging.yml",
 			},
 			expectedCwd:  "/project",
-			expectedConf: "/project/config/deploy.staging.yml",
+			expectedConf: "",
 			expectedDest: "staging",
 		},
 	}
