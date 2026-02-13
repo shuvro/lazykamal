@@ -36,7 +36,7 @@ type ServerGUI struct {
 	runningCmd        string
 	cmdStartTime      time.Time
 	spinner           *Spinner
-	cmdMu sync.Mutex
+	cmdMu             sync.Mutex
 	// Live log streaming
 	streamMu           sync.Mutex
 	streamingLogs      bool
