@@ -96,9 +96,9 @@ type GUI struct {
 	liveLogsStop   chan struct{}
 	liveLogsActive bool
 	liveLogsMu     sync.Mutex
-	cmdMu     sync.Mutex
-	cmdStopCh chan struct{}
-	editor    *editorState
+	cmdMu          sync.Mutex
+	cmdStopCh      chan struct{}
+	editor         *editorState
 	spinner        *Spinner
 	confirm        *confirmState
 	logScroll      int // scroll offset for log view
@@ -121,17 +121,17 @@ func New(version ...string) (*GUI, error) {
 		return nil, err
 	}
 	gui := &GUI{
-		g:              g,
-		cwd:            cwd,
-		version:        ver,
-		selectedApp:    0,
-		screen:         ScreenApps,
-		submenuIdx:     0,
-		logLines:       make([]string, 0, logBufLive),
-		statusStopCh:   make(chan struct{}),
-		liveLogsStop:   make(chan struct{}),
-		maxX:           80,
-		maxY:           24,
+		g:            g,
+		cwd:          cwd,
+		version:      ver,
+		selectedApp:  0,
+		screen:       ScreenApps,
+		submenuIdx:   0,
+		logLines:     make([]string, 0, logBufLive),
+		statusStopCh: make(chan struct{}),
+		liveLogsStop: make(chan struct{}),
+		maxX:         80,
+		maxY:         24,
 	}
 	gui.destinations, _ = kamal.FindDeployConfigs(gui.cwd)
 	if len(gui.destinations) == 0 {
