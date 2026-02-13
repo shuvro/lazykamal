@@ -97,6 +97,7 @@ type GUI struct {
 	liveLogsStop   chan struct{}
 	liveLogsActive bool
 	liveLogsMu     sync.Mutex
+	cmdMu          sync.Mutex
 	savedTermState *term.State
 	stdinFd        int
 	editor         *editorState
@@ -179,14 +180,22 @@ func (gui *GUI) layout(g *gocui.Gui) error {
 	live := gui.liveLogsActive
 	gui.liveLogsMu.Unlock()
 
+	// Snapshot command state under lock
+	gui.cmdMu.Lock()
+	isRunning := gui.running
+	cmdName := gui.runningCmd
+	cmdStart := gui.cmdStartTime
+	sp := gui.spinner
+	gui.cmdMu.Unlock()
+
 	// Build status indicator
 	var statusIndicator string
-	if gui.running {
-		elapsed := time.Since(gui.cmdStartTime)
-		if gui.spinner != nil {
-			statusIndicator = fmt.Sprintf(" %s %s (%s)", gui.spinner.Frame(), gui.runningCmd, formatDuration(elapsed))
+	if isRunning {
+		elapsed := time.Since(cmdStart)
+		if sp != nil {
+			statusIndicator = fmt.Sprintf(" %s %s (%s)", sp.Frame(), cmdName, formatDuration(elapsed))
 		} else {
-			statusIndicator = fmt.Sprintf(" %s %s (%s)", yellow(iconRunning), gui.runningCmd, formatDuration(elapsed))
+			statusIndicator = fmt.Sprintf(" %s %s (%s)", yellow(iconRunning), cmdName, formatDuration(elapsed))
 		}
 	} else if live {
 		statusIndicator = " " + green(iconPlay) + " Live logs (Esc to stop)"
@@ -842,9 +851,15 @@ func (gui *GUI) execConfig() {
 		}
 	case 2: // Redeploy
 		opts := gui.runOpts()
+		gui.cmdMu.Lock()
 		gui.running = true
+		gui.cmdMu.Unlock()
 		go func() {
-			defer func() { gui.running = false }()
+			defer func() {
+				gui.cmdMu.Lock()
+				gui.running = false
+				gui.cmdMu.Unlock()
+			}()
 			res, err := kamal.Redeploy(opts)
 			if err != nil {
 				gui.appendLog([]string{"Error: " + err.Error()})
@@ -855,9 +870,15 @@ func (gui *GUI) execConfig() {
 		}()
 	case 3: // App restart
 		opts := gui.runOpts()
+		gui.cmdMu.Lock()
 		gui.running = true
+		gui.cmdMu.Unlock()
 		go func() {
-			defer func() { gui.running = false }()
+			defer func() {
+				gui.cmdMu.Lock()
+				gui.running = false
+				gui.cmdMu.Unlock()
+			}()
 			res, err := kamal.AppRestart(opts)
 			if err != nil {
 				gui.appendLog([]string{"Error: " + err.Error()})
@@ -1260,7 +1281,10 @@ func (gui *GUI) keyDown(g *gocui.Gui, v *gocui.View) error {
 }
 
 func (gui *GUI) keyEnter(g *gocui.Gui, v *gocui.View) error {
-	if gui.running {
+	gui.cmdMu.Lock()
+	isRunning := gui.running
+	gui.cmdMu.Unlock()
+	if isRunning {
 		return nil
 	}
 	switch gui.screen {
@@ -1290,6 +1314,7 @@ func (gui *GUI) keyEnter(g *gocui.Gui, v *gocui.View) error {
 
 // runCommand executes a kamal command with spinner, timing, and proper logging
 func (gui *GUI) runCommand(name string, fn func() (kamal.Result, error)) {
+	gui.cmdMu.Lock()
 	gui.running = true
 	gui.runningCmd = name
 	gui.cmdStartTime = time.Now()
@@ -1299,15 +1324,18 @@ func (gui *GUI) runCommand(name string, fn func() (kamal.Result, error)) {
 		gui.g.Update(func(*gocui.Gui) error { return nil })
 	})
 	gui.spinner.Start()
+	gui.cmdMu.Unlock()
 
 	gui.logInfo("Running: " + name)
 
 	go func() {
 		defer func() {
+			gui.cmdMu.Lock()
 			gui.spinner.Stop()
 			gui.spinner = nil
 			gui.running = false
 			gui.runningCmd = ""
+			gui.cmdMu.Unlock()
 			gui.g.Update(func(*gocui.Gui) error { return nil })
 		}()
 

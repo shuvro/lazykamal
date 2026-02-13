@@ -51,6 +51,12 @@ func TestValidatePath(t *testing.T) {
 			target:    "/etc/passwd",
 			wantError: true,
 		},
+		{
+			name:      "prefix bypass with similar directory name",
+			basePath:  subDir,
+			target:    subDir + "evil",
+			wantError: true,
+		},
 	}
 
 	for _, tt := range tests {

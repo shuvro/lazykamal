@@ -42,8 +42,16 @@ func validatePath(basePath, targetPath string) error {
 		realTarget = filepath.Join(realParent, filepath.Base(absTarget))
 	}
 
-	// Ensure the target is within the base directory
-	if !strings.HasPrefix(realTarget, realBase) {
+	// Ensure the target is within the base directory using filepath.Rel
+	// This avoids the prefix-matching bug where /foo/bar matches /foo/barbaz
+	if realTarget == realBase {
+		return nil
+	}
+	rel, err := filepath.Rel(realBase, realTarget)
+	if err != nil {
+		return fmt.Errorf("path traversal detected: %s is outside %s", targetPath, basePath)
+	}
+	if strings.HasPrefix(rel, "..") {
 		return fmt.Errorf("path traversal detected: %s is outside %s", targetPath, basePath)
 	}
 
