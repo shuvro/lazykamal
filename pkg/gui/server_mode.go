@@ -36,7 +36,9 @@ type ServerGUI struct {
 	runningCmd        string
 	cmdStartTime      time.Time
 	spinner           *Spinner
+	cmdMu sync.Mutex
 	// Live log streaming
+	streamMu           sync.Mutex
 	streamingLogs      bool
 	liveLogsStop       chan struct{}
 	streamingContainer string
@@ -178,12 +180,22 @@ func (gui *ServerGUI) renderHeader(g *gocui.Gui) {
 	}
 	v.Clear()
 
+	gui.streamMu.Lock()
+	isStreaming := gui.streamingLogs
+	gui.streamMu.Unlock()
+
+	gui.cmdMu.Lock()
+	isRunning := gui.running
+	cmdName := gui.runningCmd
+	cmdStart := gui.cmdStartTime
+	gui.cmdMu.Unlock()
+
 	status := green("✓ Connected")
-	if gui.streamingLogs {
+	if isStreaming {
 		status = cyan(gui.spinner.Frame()) + " Streaming logs " + dim("(Esc to stop)")
-	} else if gui.running {
-		elapsed := time.Since(gui.cmdStartTime)
-		status = yellow(gui.spinner.Frame()) + " " + gui.runningCmd + " " + dim(formatDuration(elapsed))
+	} else if isRunning {
+		elapsed := time.Since(cmdStart)
+		status = yellow(gui.spinner.Frame()) + " " + cmdName + " " + dim(formatDuration(elapsed))
 	}
 
 	// Show mode indicator prominently
@@ -535,8 +547,12 @@ func (gui *ServerGUI) renderLog(g *gocui.Gui) {
 	v.Clear()
 
 	// Update title based on streaming status
-	if gui.streamingLogs {
-		v.Title = fmt.Sprintf(" LIVE: %s (Esc to stop) ", truncate(gui.streamingContainer, 20))
+	gui.streamMu.Lock()
+	isStreaming := gui.streamingLogs
+	streamContainer := gui.streamingContainer
+	gui.streamMu.Unlock()
+	if isStreaming {
+		v.Title = fmt.Sprintf(" LIVE: %s (Esc to stop) ", truncate(streamContainer, 20))
 	} else {
 		v.Title = " Output / Logs "
 	}
@@ -773,20 +789,28 @@ func (gui *ServerGUI) keyContainerRemove(g *gocui.Gui, v *gocui.View) error {
 
 func (gui *ServerGUI) removeContainer(ci ContainerInfo) {
 	gui.logInfo(fmt.Sprintf("Removing %s...", ci.Container.Name))
+	gui.cmdMu.Lock()
 	gui.running = true
 	gui.runningCmd = "Remove"
 	gui.cmdStartTime = time.Now()
+	gui.cmdMu.Unlock()
 
 	go func() {
+		defer func() {
+			gui.cmdMu.Lock()
+			gui.running = false
+			gui.cmdMu.Unlock()
+		}()
 		cmd := fmt.Sprintf("docker rm %s", ci.Container.ID)
 		if _, err := gui.client.Run(cmd); err != nil {
 			gui.logError(fmt.Sprintf("Failed to remove %s: %s", ci.Container.Name, err.Error()))
 		} else {
-			gui.logSuccess(fmt.Sprintf("Removed %s in %s", ci.Container.Name, formatDuration(time.Since(gui.cmdStartTime))))
-			// Refresh apps from server to get updated container list
+			gui.cmdMu.Lock()
+			start := gui.cmdStartTime
+			gui.cmdMu.Unlock()
+			gui.logSuccess(fmt.Sprintf("Removed %s in %s", ci.Container.Name, formatDuration(time.Since(start))))
 			gui.refreshAppsAndContainers()
 		}
-		gui.running = false
 	}()
 }
 
@@ -885,7 +909,10 @@ func (gui *ServerGUI) keyEnter(g *gocui.Gui, v *gocui.View) error {
 
 func (gui *ServerGUI) keyBack(g *gocui.Gui, v *gocui.View) error {
 	// Stop log streaming if active
-	if gui.streamingLogs {
+	gui.streamMu.Lock()
+	isStreaming := gui.streamingLogs
+	gui.streamMu.Unlock()
+	if isStreaming {
 		gui.stopLogStream()
 		return nil
 	}
@@ -934,17 +961,23 @@ func (gui *ServerGUI) keyRefresh(g *gocui.Gui, v *gocui.View) error {
 
 func (gui *ServerGUI) restartContainer(ci ContainerInfo) {
 	gui.logInfo(fmt.Sprintf("Restarting %s...", ci.Container.Name))
+	gui.cmdMu.Lock()
 	gui.running = true
 	gui.runningCmd = "Restart"
 	gui.cmdStartTime = time.Now()
+	gui.cmdMu.Unlock()
 
 	go func() {
+		defer func() {
+			gui.cmdMu.Lock()
+			gui.running = false
+			gui.cmdMu.Unlock()
+		}()
 		if err := docker.RestartContainer(gui.client, ci.Container.ID); err != nil {
 			gui.logError(fmt.Sprintf("Failed to restart %s: %s", ci.Container.Name, err.Error()))
 		} else {
 			gui.logSuccess(fmt.Sprintf("Restarted %s", ci.Container.Name))
 		}
-		gui.running = false
 	}()
 }
 
@@ -1101,18 +1134,22 @@ func (gui *ServerGUI) viewContainerLogs(ci ContainerInfo) {
 
 	gui.logInfo(fmt.Sprintf("Streaming logs from %s [%s]... (press Esc to stop)", ci.Container.Name, ci.Role))
 
+	gui.streamMu.Lock()
 	gui.streamingLogs = true
 	gui.streamingContainer = ci.Container.Name
 	gui.liveLogsStop = make(chan struct{})
+	stopCh := gui.liveLogsStop
+	gui.streamMu.Unlock()
 
 	go func() {
 		err := docker.StreamContainerLogs(gui.client, ci.Container.ID, func(line string) {
 			gui.appendLog([]string{line})
-			// Trigger UI update
 			gui.g.Update(func(g *gocui.Gui) error { return nil })
-		}, gui.liveLogsStop)
+		}, stopCh)
 
+		gui.streamMu.Lock()
 		gui.streamingLogs = false
+		gui.streamMu.Unlock()
 		if err != nil {
 			gui.logError("Log stream ended: " + err.Error())
 		} else {
@@ -1122,41 +1159,56 @@ func (gui *ServerGUI) viewContainerLogs(ci ContainerInfo) {
 }
 
 func (gui *ServerGUI) stopLogStream() {
+	gui.streamMu.Lock()
+	defer gui.streamMu.Unlock()
 	if gui.streamingLogs && gui.liveLogsStop != nil {
 		close(gui.liveLogsStop)
+		gui.liveLogsStop = nil
 		gui.streamingLogs = false
 	}
 }
 
 func (gui *ServerGUI) stopContainer(ci ContainerInfo) {
 	gui.logInfo(fmt.Sprintf("Stopping %s...", ci.Container.Name))
+	gui.cmdMu.Lock()
 	gui.running = true
 	gui.runningCmd = "Stop"
 	gui.cmdStartTime = time.Now()
+	gui.cmdMu.Unlock()
 
 	go func() {
+		defer func() {
+			gui.cmdMu.Lock()
+			gui.running = false
+			gui.cmdMu.Unlock()
+		}()
 		if err := docker.StopContainer(gui.client, ci.Container.ID); err != nil {
 			gui.logError(fmt.Sprintf("Failed to stop %s: %s", ci.Container.Name, err.Error()))
 		} else {
 			gui.logSuccess(fmt.Sprintf("Stopped %s", ci.Container.Name))
 		}
-		gui.running = false
 	}()
 }
 
 func (gui *ServerGUI) startContainer(ci ContainerInfo) {
 	gui.logInfo(fmt.Sprintf("Starting %s...", ci.Container.Name))
+	gui.cmdMu.Lock()
 	gui.running = true
 	gui.runningCmd = "Start"
 	gui.cmdStartTime = time.Now()
+	gui.cmdMu.Unlock()
 
 	go func() {
+		defer func() {
+			gui.cmdMu.Lock()
+			gui.running = false
+			gui.cmdMu.Unlock()
+		}()
 		if err := docker.StartContainer(gui.client, ci.Container.ID); err != nil {
 			gui.logError(fmt.Sprintf("Failed to start %s: %s", ci.Container.Name, err.Error()))
 		} else {
 			gui.logSuccess(fmt.Sprintf("Started %s", ci.Container.Name))
 		}
-		gui.running = false
 	}()
 }
 
@@ -1167,11 +1219,18 @@ func (gui *ServerGUI) restartApp(app docker.App) {
 	}
 
 	gui.logInfo(fmt.Sprintf("Restarting %s...", app.Service))
+	gui.cmdMu.Lock()
 	gui.running = true
 	gui.runningCmd = "Restart"
 	gui.cmdStartTime = time.Now()
+	gui.cmdMu.Unlock()
 
 	go func() {
+		defer func() {
+			gui.cmdMu.Lock()
+			gui.running = false
+			gui.cmdMu.Unlock()
+		}()
 		for _, c := range app.Containers {
 			if err := docker.RestartContainer(gui.client, c.ID); err != nil {
 				gui.logError(fmt.Sprintf("Failed to restart %s: %s", c.Name, err.Error()))
@@ -1179,8 +1238,10 @@ func (gui *ServerGUI) restartApp(app docker.App) {
 				gui.logSuccess(fmt.Sprintf("Restarted %s", c.Name))
 			}
 		}
-		gui.running = false
-		gui.logSuccess(fmt.Sprintf("Restart completed in %s", formatDuration(time.Since(gui.cmdStartTime))))
+		gui.cmdMu.Lock()
+		start := gui.cmdStartTime
+		gui.cmdMu.Unlock()
+		gui.logSuccess(fmt.Sprintf("Restart completed in %s", formatDuration(time.Since(start))))
 	}()
 }
 
@@ -1191,11 +1252,18 @@ func (gui *ServerGUI) stopApp(app docker.App) {
 	}
 
 	gui.logInfo(fmt.Sprintf("Stopping %s...", app.Service))
+	gui.cmdMu.Lock()
 	gui.running = true
 	gui.runningCmd = "Stop"
 	gui.cmdStartTime = time.Now()
+	gui.cmdMu.Unlock()
 
 	go func() {
+		defer func() {
+			gui.cmdMu.Lock()
+			gui.running = false
+			gui.cmdMu.Unlock()
+		}()
 		for _, c := range app.Containers {
 			if err := docker.StopContainer(gui.client, c.ID); err != nil {
 				gui.logError(fmt.Sprintf("Failed to stop %s: %s", c.Name, err.Error()))
@@ -1203,8 +1271,10 @@ func (gui *ServerGUI) stopApp(app docker.App) {
 				gui.logSuccess(fmt.Sprintf("Stopped %s", c.Name))
 			}
 		}
-		gui.running = false
-		gui.logSuccess(fmt.Sprintf("Stop completed in %s", formatDuration(time.Since(gui.cmdStartTime))))
+		gui.cmdMu.Lock()
+		start := gui.cmdStartTime
+		gui.cmdMu.Unlock()
+		gui.logSuccess(fmt.Sprintf("Stop completed in %s", formatDuration(time.Since(start))))
 	}()
 }
 
@@ -1215,11 +1285,18 @@ func (gui *ServerGUI) startApp(app docker.App) {
 	}
 
 	gui.logInfo(fmt.Sprintf("Starting %s...", app.Service))
+	gui.cmdMu.Lock()
 	gui.running = true
 	gui.runningCmd = "Start"
 	gui.cmdStartTime = time.Now()
+	gui.cmdMu.Unlock()
 
 	go func() {
+		defer func() {
+			gui.cmdMu.Lock()
+			gui.running = false
+			gui.cmdMu.Unlock()
+		}()
 		for _, c := range app.Containers {
 			if err := docker.StartContainer(gui.client, c.ID); err != nil {
 				gui.logError(fmt.Sprintf("Failed to start %s: %s", c.Name, err.Error()))
@@ -1227,8 +1304,10 @@ func (gui *ServerGUI) startApp(app docker.App) {
 				gui.logSuccess(fmt.Sprintf("Started %s", c.Name))
 			}
 		}
-		gui.running = false
-		gui.logSuccess(fmt.Sprintf("Start completed in %s", formatDuration(time.Since(gui.cmdStartTime))))
+		gui.cmdMu.Lock()
+		start := gui.cmdStartTime
+		gui.cmdMu.Unlock()
+		gui.logSuccess(fmt.Sprintf("Start completed in %s", formatDuration(time.Since(start))))
 	}()
 }
 
@@ -1258,11 +1337,18 @@ func (gui *ServerGUI) showAppDetails(app docker.App) {
 
 func (gui *ServerGUI) rebootApp(app docker.App) {
 	gui.logInfo(fmt.Sprintf("Rebooting %s (stop + start)...", app.Service))
+	gui.cmdMu.Lock()
 	gui.running = true
 	gui.runningCmd = "Reboot"
 	gui.cmdStartTime = time.Now()
+	gui.cmdMu.Unlock()
 
 	go func() {
+		defer func() {
+			gui.cmdMu.Lock()
+			gui.running = false
+			gui.cmdMu.Unlock()
+		}()
 		// Stop all containers
 		for _, c := range app.Containers {
 			if err := docker.StopContainer(gui.client, c.ID); err != nil {
@@ -1277,8 +1363,10 @@ func (gui *ServerGUI) rebootApp(app docker.App) {
 				gui.logSuccess(fmt.Sprintf("Rebooted %s", c.Name))
 			}
 		}
-		gui.running = false
-		gui.logSuccess(fmt.Sprintf("Reboot completed in %s", formatDuration(time.Since(gui.cmdStartTime))))
+		gui.cmdMu.Lock()
+		start := gui.cmdStartTime
+		gui.cmdMu.Unlock()
+		gui.logSuccess(fmt.Sprintf("Reboot completed in %s", formatDuration(time.Since(start))))
 	}()
 }
 
@@ -1312,9 +1400,12 @@ func (gui *ServerGUI) viewProxyLogs() {
 	gui.stopLogStream()
 	gui.logInfo("Streaming kamal-proxy logs... (press Esc to stop)")
 
+	gui.streamMu.Lock()
 	gui.streamingLogs = true
 	gui.streamingContainer = "kamal-proxy"
 	gui.liveLogsStop = make(chan struct{})
+	stopCh := gui.liveLogsStop
+	gui.streamMu.Unlock()
 
 	go func() {
 		// Find kamal-proxy container
@@ -1322,7 +1413,9 @@ func (gui *ServerGUI) viewProxyLogs() {
 		proxyID, err := gui.client.Run(cmd)
 		if err != nil || strings.TrimSpace(proxyID) == "" {
 			gui.logError("kamal-proxy container not found")
+			gui.streamMu.Lock()
 			gui.streamingLogs = false
+			gui.streamMu.Unlock()
 			return
 		}
 
@@ -1330,9 +1423,11 @@ func (gui *ServerGUI) viewProxyLogs() {
 		err = docker.StreamContainerLogs(gui.client, proxyID, func(line string) {
 			gui.appendLog([]string{line})
 			gui.g.Update(func(g *gocui.Gui) error { return nil })
-		}, gui.liveLogsStop)
+		}, stopCh)
 
+		gui.streamMu.Lock()
 		gui.streamingLogs = false
+		gui.streamMu.Unlock()
 		if err != nil {
 			gui.logError("Proxy log stream ended: " + err.Error())
 		} else {
@@ -1446,11 +1541,18 @@ func (gui *ServerGUI) showAppHealth(app docker.App) {
 
 func (gui *ServerGUI) removeStoppedContainers(app docker.App) {
 	gui.logInfo(fmt.Sprintf("Removing stopped containers for %s...", app.Service))
+	gui.cmdMu.Lock()
 	gui.running = true
 	gui.runningCmd = "Remove"
 	gui.cmdStartTime = time.Now()
+	gui.cmdMu.Unlock()
 
 	go func() {
+		defer func() {
+			gui.cmdMu.Lock()
+			gui.running = false
+			gui.cmdMu.Unlock()
+		}()
 		removed := 0
 		allContainers := app.Containers
 		for _, acc := range app.Accessories {
@@ -1469,12 +1571,13 @@ func (gui *ServerGUI) removeStoppedContainers(app docker.App) {
 			}
 		}
 
-		gui.running = false
 		if removed == 0 {
 			gui.logInfo("No stopped containers to remove")
 		} else {
-			gui.logSuccess(fmt.Sprintf("Removed %d container(s) in %s", removed, formatDuration(time.Since(gui.cmdStartTime))))
-			// Refresh apps from server
+			gui.cmdMu.Lock()
+			start := gui.cmdStartTime
+			gui.cmdMu.Unlock()
+			gui.logSuccess(fmt.Sprintf("Removed %d container(s) in %s", removed, formatDuration(time.Since(start))))
 			gui.refreshAppsAndContainers()
 		}
 	}()
@@ -1497,38 +1600,52 @@ func (gui *ServerGUI) getProxyContainerID() (string, error) {
 
 func (gui *ServerGUI) proxyRestart() {
 	gui.logInfo("Restarting kamal-proxy...")
+	gui.cmdMu.Lock()
 	gui.running = true
 	gui.runningCmd = "Proxy Restart"
 	gui.cmdStartTime = time.Now()
+	gui.cmdMu.Unlock()
 
 	go func() {
+		defer func() {
+			gui.cmdMu.Lock()
+			gui.running = false
+			gui.cmdMu.Unlock()
+		}()
 		proxyID, err := gui.getProxyContainerID()
 		if err != nil {
 			gui.logError(err.Error())
-			gui.running = false
 			return
 		}
 
 		if err := docker.RestartContainer(gui.client, proxyID); err != nil {
 			gui.logError(fmt.Sprintf("Failed to restart proxy: %s", err.Error()))
 		} else {
-			gui.logSuccess(fmt.Sprintf("Proxy restarted in %s", formatDuration(time.Since(gui.cmdStartTime))))
+			gui.cmdMu.Lock()
+			start := gui.cmdStartTime
+			gui.cmdMu.Unlock()
+			gui.logSuccess(fmt.Sprintf("Proxy restarted in %s", formatDuration(time.Since(start))))
 		}
-		gui.running = false
 	}()
 }
 
 func (gui *ServerGUI) proxyReboot() {
 	gui.logInfo("Rebooting kamal-proxy (stop + start)...")
+	gui.cmdMu.Lock()
 	gui.running = true
 	gui.runningCmd = "Proxy Reboot"
 	gui.cmdStartTime = time.Now()
+	gui.cmdMu.Unlock()
 
 	go func() {
+		defer func() {
+			gui.cmdMu.Lock()
+			gui.running = false
+			gui.cmdMu.Unlock()
+		}()
 		proxyID, err := gui.getProxyContainerID()
 		if err != nil {
 			gui.logError(err.Error())
-			gui.running = false
 			return
 		}
 
@@ -1539,55 +1656,73 @@ func (gui *ServerGUI) proxyReboot() {
 		if err := docker.StartContainer(gui.client, proxyID); err != nil {
 			gui.logError(fmt.Sprintf("Failed to start proxy: %s", err.Error()))
 		} else {
-			gui.logSuccess(fmt.Sprintf("Proxy rebooted in %s", formatDuration(time.Since(gui.cmdStartTime))))
+			gui.cmdMu.Lock()
+			start := gui.cmdStartTime
+			gui.cmdMu.Unlock()
+			gui.logSuccess(fmt.Sprintf("Proxy rebooted in %s", formatDuration(time.Since(start))))
 		}
-		gui.running = false
 	}()
 }
 
 func (gui *ServerGUI) proxyStop() {
 	gui.logInfo("Stopping kamal-proxy...")
+	gui.cmdMu.Lock()
 	gui.running = true
 	gui.runningCmd = "Proxy Stop"
 	gui.cmdStartTime = time.Now()
+	gui.cmdMu.Unlock()
 
 	go func() {
+		defer func() {
+			gui.cmdMu.Lock()
+			gui.running = false
+			gui.cmdMu.Unlock()
+		}()
 		proxyID, err := gui.getProxyContainerID()
 		if err != nil {
 			gui.logError(err.Error())
-			gui.running = false
 			return
 		}
 
 		if err := docker.StopContainer(gui.client, proxyID); err != nil {
 			gui.logError(fmt.Sprintf("Failed to stop proxy: %s", err.Error()))
 		} else {
-			gui.logSuccess(fmt.Sprintf("Proxy stopped in %s", formatDuration(time.Since(gui.cmdStartTime))))
+			gui.cmdMu.Lock()
+			start := gui.cmdStartTime
+			gui.cmdMu.Unlock()
+			gui.logSuccess(fmt.Sprintf("Proxy stopped in %s", formatDuration(time.Since(start))))
 		}
-		gui.running = false
 	}()
 }
 
 func (gui *ServerGUI) proxyStart() {
 	gui.logInfo("Starting kamal-proxy...")
+	gui.cmdMu.Lock()
 	gui.running = true
 	gui.runningCmd = "Proxy Start"
 	gui.cmdStartTime = time.Now()
+	gui.cmdMu.Unlock()
 
 	go func() {
+		defer func() {
+			gui.cmdMu.Lock()
+			gui.running = false
+			gui.cmdMu.Unlock()
+		}()
 		proxyID, err := gui.getProxyContainerID()
 		if err != nil {
 			gui.logError(err.Error())
-			gui.running = false
 			return
 		}
 
 		if err := docker.StartContainer(gui.client, proxyID); err != nil {
 			gui.logError(fmt.Sprintf("Failed to start proxy: %s", err.Error()))
 		} else {
-			gui.logSuccess(fmt.Sprintf("Proxy started in %s", formatDuration(time.Since(gui.cmdStartTime))))
+			gui.cmdMu.Lock()
+			start := gui.cmdStartTime
+			gui.cmdMu.Unlock()
+			gui.logSuccess(fmt.Sprintf("Proxy started in %s", formatDuration(time.Since(start))))
 		}
-		gui.running = false
 	}()
 }
 

@@ -13,7 +13,18 @@ import (
 const viewEditor = "editor"
 const viewEditorStatus = "editorStatus"
 
+// runeIndexToByteOffset converts a rune index to a byte offset in a string.
+func runeIndexToByteOffset(s string, runeIdx int) int {
+	offset := 0
+	for i := 0; i < runeIdx && offset < len(s); i++ {
+		_, size := utf8.DecodeRuneInString(s[offset:])
+		offset += size
+	}
+	return offset
+}
+
 // Editor state: nano/vi-style in-TUI modal.
+// Col is a rune index (not byte offset) to handle multi-byte characters correctly.
 type editorState struct {
 	Path        string
 	Lines       []string
@@ -116,8 +127,9 @@ func (gui *GUI) editorMoveUp() {
 	}
 	if gui.editor.Row > 0 {
 		gui.editor.Row--
-		if gui.editor.Col > len(gui.editor.Lines[gui.editor.Row]) {
-			gui.editor.Col = len(gui.editor.Lines[gui.editor.Row])
+		runeCount := utf8.RuneCountInString(gui.editor.Lines[gui.editor.Row])
+		if gui.editor.Col > runeCount {
+			gui.editor.Col = runeCount
 		}
 		if gui.editor.Row < gui.editor.Scroll {
 			gui.editor.Scroll = gui.editor.Row
@@ -131,8 +143,9 @@ func (gui *GUI) editorMoveDown() {
 	}
 	if gui.editor.Row < len(gui.editor.Lines)-1 {
 		gui.editor.Row++
-		if gui.editor.Col > len(gui.editor.Lines[gui.editor.Row]) {
-			gui.editor.Col = len(gui.editor.Lines[gui.editor.Row])
+		runeCount := utf8.RuneCountInString(gui.editor.Lines[gui.editor.Row])
+		if gui.editor.Col > runeCount {
+			gui.editor.Col = runeCount
 		}
 	}
 }
@@ -150,8 +163,8 @@ func (gui *GUI) editorMoveRight() {
 	if gui.editor == nil {
 		return
 	}
-	lineLen := len(gui.editor.Lines[gui.editor.Row])
-	if gui.editor.Col < lineLen {
+	runeCount := utf8.RuneCountInString(gui.editor.Lines[gui.editor.Row])
+	if gui.editor.Col < runeCount {
 		gui.editor.Col++
 	}
 }
@@ -161,10 +174,11 @@ func (gui *GUI) editorInsertRune(r rune) {
 		return
 	}
 	line := gui.editor.Lines[gui.editor.Row]
-	left := line[:gui.editor.Col]
-	right := line[gui.editor.Col:]
+	byteOff := runeIndexToByteOffset(line, gui.editor.Col)
+	left := line[:byteOff]
+	right := line[byteOff:]
 	gui.editor.Lines[gui.editor.Row] = left + string(r) + right
-	gui.editor.Col += utf8.RuneLen(r)
+	gui.editor.Col++
 	gui.editor.Dirty = true
 }
 
@@ -174,12 +188,14 @@ func (gui *GUI) editorBackspace() {
 	}
 	if gui.editor.Col > 0 {
 		line := gui.editor.Lines[gui.editor.Row]
-		gui.editor.Lines[gui.editor.Row] = line[:gui.editor.Col-1] + line[gui.editor.Col:]
+		byteOffCur := runeIndexToByteOffset(line, gui.editor.Col)
+		byteOffPrev := runeIndexToByteOffset(line, gui.editor.Col-1)
+		gui.editor.Lines[gui.editor.Row] = line[:byteOffPrev] + line[byteOffCur:]
 		gui.editor.Col--
 		gui.editor.Dirty = true
 	} else if gui.editor.Row > 0 {
 		// Merge with previous line
-		prevLen := len(gui.editor.Lines[gui.editor.Row-1])
+		prevLen := utf8.RuneCountInString(gui.editor.Lines[gui.editor.Row-1])
 		gui.editor.Lines[gui.editor.Row-1] += gui.editor.Lines[gui.editor.Row]
 		gui.editor.Lines = append(gui.editor.Lines[:gui.editor.Row], gui.editor.Lines[gui.editor.Row+1:]...)
 		gui.editor.Row--
@@ -196,8 +212,9 @@ func (gui *GUI) editorEnter() {
 		return
 	}
 	line := gui.editor.Lines[gui.editor.Row]
-	left := line[:gui.editor.Col]
-	right := line[gui.editor.Col:]
+	byteOff := runeIndexToByteOffset(line, gui.editor.Col)
+	left := line[:byteOff]
+	right := line[byteOff:]
 	gui.editor.Lines[gui.editor.Row] = left
 	newLine := right
 	gui.editor.Lines = append(gui.editor.Lines[:gui.editor.Row+1], append([]string{newLine}, gui.editor.Lines[gui.editor.Row+1:]...)...)
@@ -255,7 +272,8 @@ func (gui *GUI) renderEditorView(g *gocui.Gui) error {
 			fmt.Fprintln(v, line)
 		}
 	}
-	v.SetCursor(gui.editor.Col, gui.editor.Row-gui.editor.Scroll)
+	cursorByteOff := runeIndexToByteOffset(gui.editor.Lines[gui.editor.Row], gui.editor.Col)
+	v.SetCursor(cursorByteOff, gui.editor.Row-gui.editor.Scroll)
 	g.SetCurrentView(viewEditor)
 
 	// Status line at bottom
