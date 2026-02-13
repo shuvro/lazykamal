@@ -43,7 +43,7 @@ func GetLatestVersion() (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return "", fmt.Errorf("failed to check for updates: HTTP %d", resp.StatusCode)
 	}
 
@@ -137,7 +137,7 @@ func DoUpgrade(currentVersion string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return fmt.Errorf("failed to download: HTTP %d (asset may not exist for your platform)", resp.StatusCode)
 	}
 
