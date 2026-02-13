@@ -10,7 +10,6 @@ import (
 
 	"github.com/jroimartin/gocui"
 	"github.com/shuvro/lazykamal/pkg/kamal"
-	"golang.org/x/term"
 )
 
 const (
@@ -97,11 +96,9 @@ type GUI struct {
 	liveLogsStop   chan struct{}
 	liveLogsActive bool
 	liveLogsMu     sync.Mutex
-	cmdMu          sync.Mutex
-	cmdStopCh      chan struct{}
-	savedTermState *term.State
-	stdinFd        int
-	editor         *editorState
+	cmdMu     sync.Mutex
+	cmdStopCh chan struct{}
+	editor    *editorState
 	spinner        *Spinner
 	confirm        *confirmState
 	logScroll      int // scroll offset for log view
@@ -119,16 +116,11 @@ func New(version ...string) (*GUI, error) {
 	if err != nil {
 		cwd = "."
 	}
-	stdinFd := int(os.Stdin.Fd())
-	savedState, _ := term.GetState(stdinFd)
-
 	g, err := gocui.NewGui(gocui.OutputNormal)
 	if err != nil {
 		return nil, err
 	}
 	gui := &GUI{
-		stdinFd:        stdinFd,
-		savedTermState: savedState,
 		g:              g,
 		cwd:            cwd,
 		version:        ver,
@@ -1348,11 +1340,15 @@ func (gui *GUI) runCommand(name string, fn func(stopCh <-chan struct{}) (kamal.R
 // cancelCommand cancels the currently running command if any.
 func (gui *GUI) cancelCommand() {
 	gui.cmdMu.Lock()
-	defer gui.cmdMu.Unlock()
+	var name string
 	if gui.running && gui.cmdStopCh != nil {
-		gui.logInfo("Cancelled: " + gui.runningCmd)
+		name = gui.runningCmd
 		close(gui.cmdStopCh)
 		gui.cmdStopCh = nil
+	}
+	gui.cmdMu.Unlock()
+	if name != "" {
+		gui.logInfo("Cancelled: " + name)
 	}
 }
 
@@ -1811,7 +1807,11 @@ func (gui *GUI) Run() error {
 	return gui.g.MainLoop()
 }
 
-// SetCwd sets working directory and re-scans deploy configs.
+// Close tears down the gocui instance, restoring terminal state.
+func (gui *GUI) Close() {
+	gui.g.Close()
+}
+
 // SetCwd sets working directory and re-scans deploy configs.
 // Returns an error if the path is invalid or unsafe.
 func (gui *GUI) SetCwd(cwd string) error {

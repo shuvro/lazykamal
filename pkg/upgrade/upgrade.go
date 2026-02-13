@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -42,6 +43,7 @@ func GetLatestVersion() (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		io.Copy(io.Discard, resp.Body)
 		return "", fmt.Errorf("failed to check for updates: HTTP %d", resp.StatusCode)
 	}
 
@@ -53,14 +55,26 @@ func GetLatestVersion() (string, error) {
 	return release.TagName, nil
 }
 
-// NeedsUpdate compares current version with latest
+// NeedsUpdate compares current version with latest using numeric semver comparison.
 func NeedsUpdate(current, latest string) bool {
-	// Remove 'v' prefix for comparison
 	current = strings.TrimPrefix(current, "v")
 	latest = strings.TrimPrefix(latest, "v")
-
-	// Simple string comparison works for semver
-	return current != latest && current != "dev"
+	if current == "dev" {
+		return false
+	}
+	cParts := strings.Split(current, ".")
+	lParts := strings.Split(latest, ".")
+	for i := 0; i < len(cParts) && i < len(lParts); i++ {
+		c, _ := strconv.Atoi(cParts[i])
+		l, _ := strconv.Atoi(lParts[i])
+		if c < l {
+			return true
+		}
+		if c > l {
+			return false
+		}
+	}
+	return false
 }
 
 // getAssetName returns the expected asset name for the current platform
@@ -123,6 +137,7 @@ func DoUpgrade(currentVersion string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		io.Copy(io.Discard, resp.Body)
 		return fmt.Errorf("failed to download: HTTP %d (asset may not exist for your platform)", resp.StatusCode)
 	}
 

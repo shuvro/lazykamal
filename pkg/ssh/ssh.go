@@ -76,12 +76,26 @@ func (c *Client) RunWithTimeout(command string, timeout time.Duration) (string, 
 	return stdout.String(), nil
 }
 
-// RunStream executes a command and streams output line by line
+// RunStream executes a command and streams output line by line.
+// Has a 10 minute timeout to prevent hanging on stuck SSH connections.
 func (c *Client) RunStream(command string, onLine func(string), stopCh <-chan struct{}) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	if stopCh != nil {
+		go func() {
+			select {
+			case <-stopCh:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+	}
+
 	args := c.buildSSHArgs()
 	args = append(args, command)
 
-	cmd := exec.Command("ssh", args...)
+	cmd := exec.CommandContext(ctx, "ssh", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -138,16 +152,11 @@ func (c *Client) RunStream(command string, onLine func(string), stopCh <-chan st
 		close(done)
 	}()
 
-	select {
-	case <-done:
-		return nil
-	case <-stopCh:
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
-		<-done
-		return nil
+	<-done
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("stream timed out after 10 minutes")
 	}
+	return nil
 }
 
 // TestConnection tests if SSH connection works

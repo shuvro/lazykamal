@@ -134,7 +134,7 @@ func main() {
 		}
 	case sig := <-sigCh:
 		fmt.Fprintf(os.Stderr, "\nReceived %s, shutting down...\n", sig)
-		os.Exit(0)
+		g.Close()
 	}
 }
 
@@ -202,7 +202,7 @@ func runServerMode(host string) {
 		}
 	case sig := <-sigCh:
 		fmt.Fprintf(os.Stderr, "\nReceived %s, shutting down...\n", sig)
-		os.Exit(0)
+		g.Close()
 	}
 }
 

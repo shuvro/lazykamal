@@ -118,6 +118,11 @@ func (gui *ServerGUI) Run() error {
 	return gui.g.MainLoop()
 }
 
+// Close tears down the gocui instance, restoring terminal state.
+func (gui *ServerGUI) Close() {
+	gui.g.Close()
+}
+
 // layout manages the server mode layout
 func (gui *ServerGUI) layout(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
@@ -683,11 +688,15 @@ func (gui *ServerGUI) logInfo(msg string) {
 // cancelCommand cancels the currently running server command if any.
 func (gui *ServerGUI) cancelCommand() {
 	gui.cmdMu.Lock()
-	defer gui.cmdMu.Unlock()
+	var name string
 	if gui.running && gui.cmdStopCh != nil {
-		gui.logInfo("Cancelled: " + gui.runningCmd)
+		name = gui.runningCmd
 		close(gui.cmdStopCh)
 		gui.cmdStopCh = nil
+	}
+	gui.cmdMu.Unlock()
+	if name != "" {
+		gui.logInfo("Cancelled: " + name)
 	}
 }
 
