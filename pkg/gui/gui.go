@@ -39,6 +39,10 @@ const (
 	ScreenEditor
 	ScreenHelp
 	ScreenConfirm
+	ScreenBuild
+	ScreenPrune
+	ScreenSecrets
+	ScreenRegistry
 )
 
 func (s Screen) String() string {
@@ -67,6 +71,14 @@ func (s Screen) String() string {
 		return "help"
 	case ScreenConfirm:
 		return "confirm"
+	case ScreenBuild:
+		return "build"
+	case ScreenPrune:
+		return "prune"
+	case ScreenSecrets:
+		return "secrets"
+	case ScreenRegistry:
+		return "registry"
 	default:
 		return "unknown"
 	}
@@ -409,6 +421,14 @@ func (gui *GUI) renderLeftPanel(g *gocui.Gui) {
 		gui.renderOtherMenu(v)
 	case ScreenConfig:
 		gui.renderConfigMenu(v)
+	case ScreenBuild:
+		gui.renderBuildMenu(v)
+	case ScreenPrune:
+		gui.renderPruneMenu(v)
+	case ScreenSecrets:
+		gui.renderSecretsMenu(v)
+	case ScreenRegistry:
+		gui.renderRegistryMenu(v)
 	}
 }
 
@@ -461,7 +481,7 @@ func (gui *GUI) renderDeployMenu(v *gocui.View) {
 		label = dest.Label()
 	}
 	fmt.Fprintf(v, " App: %s\n\n", label)
-	actions := []string{"Deploy", "Deploy (skip push)", "Redeploy", "Rollback", "Setup (first-time)"}
+	actions := []string{"Deploy", "Deploy (skip push)", "Redeploy", "Rollback", "Setup (first-time)", "Deploy (no cache)", "Redeploy (no cache)", "Setup (no cache)"}
 	for i, a := range actions {
 		prefix := "  "
 		if i == gui.submenuIdx {
@@ -481,7 +501,7 @@ func (gui *GUI) renderAppMenu(v *gocui.View) {
 		label = dest.Label()
 	}
 	fmt.Fprintf(v, " App: %s\n\n", label)
-	actions := []string{"Boot", "Start", "Stop", "Restart", "Logs", "Containers", "Details", "Images", "Version", "Stale containers", "Exec: whoami", "Maintenance", "Live", "Remove", "Live: App logs (stream)"}
+	actions := []string{"Boot", "Start", "Stop", "Restart", "Logs", "Containers", "Details", "Images", "Version", "Stale containers", "Exec: whoami", "Maintenance", "Live", "Remove", "Live: App logs (stream)", "Stale containers (stop)", "Exec: whoami (detach)"}
 	for i, a := range actions {
 		prefix := "  "
 		if i == gui.submenuIdx {
@@ -541,7 +561,7 @@ func (gui *GUI) renderProxyMenu(v *gocui.View) {
 		label = dest.Label()
 	}
 	fmt.Fprintf(v, " App: %s\n\n", label)
-	actions := []string{"Boot", "Start", "Stop", "Restart", "Reboot", "Reboot (rolling)", "Logs", "Details", "Remove", "Boot config get", "Boot config set", "Boot config reset", "Live: Proxy logs (stream)"}
+	actions := []string{"Boot", "Start", "Stop", "Restart", "Reboot", "Reboot (rolling)", "Logs", "Details", "Remove", "Boot config get (deprecated)", "Boot config set (deprecated)", "Boot config reset (deprecated)", "Live: Proxy logs (stream)"}
 	for i, a := range actions {
 		prefix := "  "
 		if i == gui.submenuIdx {
@@ -561,7 +581,7 @@ func (gui *GUI) renderOtherMenu(v *gocui.View) {
 		label = dest.Label()
 	}
 	fmt.Fprintf(v, " App: %s\n\n", label)
-	actions := []string{"Prune", "Build", "Config", "Details", "Audit", "Lock status", "Lock acquire", "Lock release", "Lock release --force", "Registry login", "Registry logout", "Secrets", "Env push", "Env pull", "Env delete", "Docs", "Help", "Init", "Upgrade", "Version"}
+	actions := []string{"Prune >", "Build >", "Config", "Details", "Audit", "Lock status", "Lock acquire", "Lock release", "Lock release --force", "Registry >", "Secrets >", "Env push", "Env pull", "Env delete", "Docs", "Help", "Init", "Upgrade", "Version"}
 	for i, a := range actions {
 		prefix := "  "
 		if i == gui.submenuIdx {
@@ -571,6 +591,86 @@ func (gui *GUI) renderOtherMenu(v *gocui.View) {
 	}
 	fmt.Fprintln(v, "")
 	fmt.Fprintln(v, " Enter: run  b/Esc: back  ?: help")
+}
+
+func (gui *GUI) renderBuildMenu(v *gocui.View) {
+	v.Title = " Build "
+	dest := gui.selectedDestination()
+	label := "—"
+	if dest != nil {
+		label = dest.Label()
+	}
+	fmt.Fprintf(v, " App: %s\n\n", label)
+	actions := []string{"Push", "Pull", "Deliver", "Dev", "Create", "Remove", "Details"}
+	for i, a := range actions {
+		prefix := "  "
+		if i == gui.submenuIdx {
+			prefix = "› "
+		}
+		fmt.Fprintf(v, "%s%s\n", prefix, a)
+	}
+	fmt.Fprintln(v, "")
+	fmt.Fprintln(v, " Enter: run  b/Esc: back")
+}
+
+func (gui *GUI) renderPruneMenu(v *gocui.View) {
+	v.Title = " Prune "
+	dest := gui.selectedDestination()
+	label := "—"
+	if dest != nil {
+		label = dest.Label()
+	}
+	fmt.Fprintf(v, " App: %s\n\n", label)
+	actions := []string{"All", "Images", "Containers"}
+	for i, a := range actions {
+		prefix := "  "
+		if i == gui.submenuIdx {
+			prefix = "› "
+		}
+		fmt.Fprintf(v, "%s%s\n", prefix, a)
+	}
+	fmt.Fprintln(v, "")
+	fmt.Fprintln(v, " Enter: run  b/Esc: back")
+}
+
+func (gui *GUI) renderSecretsMenu(v *gocui.View) {
+	v.Title = " Secrets "
+	dest := gui.selectedDestination()
+	label := "—"
+	if dest != nil {
+		label = dest.Label()
+	}
+	fmt.Fprintf(v, " App: %s\n\n", label)
+	actions := []string{"Fetch", "Extract", "Print"}
+	for i, a := range actions {
+		prefix := "  "
+		if i == gui.submenuIdx {
+			prefix = "› "
+		}
+		fmt.Fprintf(v, "%s%s\n", prefix, a)
+	}
+	fmt.Fprintln(v, "")
+	fmt.Fprintln(v, " Enter: run  b/Esc: back")
+}
+
+func (gui *GUI) renderRegistryMenu(v *gocui.View) {
+	v.Title = " Registry "
+	dest := gui.selectedDestination()
+	label := "—"
+	if dest != nil {
+		label = dest.Label()
+	}
+	fmt.Fprintf(v, " App: %s\n\n", label)
+	actions := []string{"Setup", "Login", "Logout", "Remove"}
+	for i, a := range actions {
+		prefix := "  "
+		if i == gui.submenuIdx {
+			prefix = "› "
+		}
+		fmt.Fprintf(v, "%s%s\n", prefix, a)
+	}
+	fmt.Fprintln(v, "")
+	fmt.Fprintln(v, " Enter: run  b/Esc: back")
 }
 
 func (gui *GUI) renderConfigMenu(v *gocui.View) {
@@ -1077,6 +1177,14 @@ func (gui *GUI) getBreadcrumb() string {
 		path = destLabel + dim(" > ") + "Other"
 	case ScreenConfig:
 		path = destLabel + dim(" > ") + yellow("Config")
+	case ScreenBuild:
+		path = destLabel + dim(" > ") + "Other" + dim(" > ") + yellow("Build")
+	case ScreenPrune:
+		path = destLabel + dim(" > ") + "Other" + dim(" > ") + red("Prune")
+	case ScreenSecrets:
+		path = destLabel + dim(" > ") + "Other" + dim(" > ") + cyan("Secrets")
+	case ScreenRegistry:
+		path = destLabel + dim(" > ") + "Other" + dim(" > ") + blue("Registry")
 	}
 	return path
 }
@@ -1171,6 +1279,9 @@ func (gui *GUI) keyBack(g *gocui.Gui, v *gocui.View) error {
 	case ScreenDeploy, ScreenApp, ScreenServer, ScreenAccessory, ScreenProxy, ScreenOther, ScreenConfig:
 		gui.screen = ScreenMainMenu
 		gui.submenuIdx = 0
+	case ScreenBuild, ScreenPrune, ScreenSecrets, ScreenRegistry:
+		gui.screen = ScreenOther
+		gui.submenuIdx = 0
 	case ScreenEditor:
 		gui.editorQuit()
 	}
@@ -1199,7 +1310,7 @@ func (gui *GUI) keyUp(g *gocui.Gui, v *gocui.View) error {
 		if gui.submenuIdx > 0 {
 			gui.submenuIdx--
 		}
-	case ScreenServer, ScreenAccessory, ScreenProxy, ScreenOther, ScreenConfig:
+	case ScreenServer, ScreenAccessory, ScreenProxy, ScreenOther, ScreenConfig, ScreenBuild, ScreenPrune, ScreenSecrets, ScreenRegistry:
 		if gui.submenuIdx > 0 {
 			gui.submenuIdx--
 		}
@@ -1222,11 +1333,11 @@ func (gui *GUI) keyDown(g *gocui.Gui, v *gocui.View) error {
 			gui.submenuIdx++
 		}
 	case ScreenDeploy:
-		if gui.submenuIdx < 4 {
+		if gui.submenuIdx < 7 {
 			gui.submenuIdx++
 		}
 	case ScreenApp:
-		if gui.submenuIdx < 14 {
+		if gui.submenuIdx < 16 {
 			gui.submenuIdx++
 		}
 	case ScreenServer:
@@ -1242,10 +1353,26 @@ func (gui *GUI) keyDown(g *gocui.Gui, v *gocui.View) error {
 			gui.submenuIdx++
 		}
 	case ScreenOther:
-		if gui.submenuIdx < 19 {
+		if gui.submenuIdx < 18 {
 			gui.submenuIdx++
 		}
 	case ScreenConfig:
+		if gui.submenuIdx < 3 {
+			gui.submenuIdx++
+		}
+	case ScreenBuild:
+		if gui.submenuIdx < 6 {
+			gui.submenuIdx++
+		}
+	case ScreenPrune:
+		if gui.submenuIdx < 2 {
+			gui.submenuIdx++
+		}
+	case ScreenSecrets:
+		if gui.submenuIdx < 2 {
+			gui.submenuIdx++
+		}
+	case ScreenRegistry:
 		if gui.submenuIdx < 3 {
 			gui.submenuIdx++
 		}
@@ -1281,6 +1408,14 @@ func (gui *GUI) keyEnter(g *gocui.Gui, v *gocui.View) error {
 		gui.execProxy()
 	case ScreenOther:
 		gui.execOther()
+	case ScreenBuild:
+		gui.execBuild()
+	case ScreenPrune:
+		gui.execPrune()
+	case ScreenSecrets:
+		gui.execSecrets()
+	case ScreenRegistry:
+		gui.execRegistry()
 	}
 	return nil
 }
@@ -1393,6 +1528,21 @@ func (gui *GUI) execDeploy() {
 		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
 			return kamal.RunKamalWithStop([]string{"setup"}, opts, stopCh)
 		}
+	case 5:
+		name = "Deploy (no cache)"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"deploy", "--no-cache"}, opts, stopCh)
+		}
+	case 6:
+		name = "Redeploy (no cache)"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"redeploy", "--no-cache"}, opts, stopCh)
+		}
+	case 7:
+		name = "Setup (no cache)"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"setup", "--no-cache"}, opts, stopCh)
+		}
 	default:
 		return
 	}
@@ -1482,6 +1632,17 @@ func (gui *GUI) execApp() {
 	case 14:
 		gui.startLiveLogs("app")
 		return
+	case 15:
+		name = "App Stale Containers (stop)"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"app", "stale_containers", "--stop"}, opts, stopCh)
+		}
+		needsConfirm = true
+	case 16:
+		name = "App Exec: whoami (detach)"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"app", "exec", "--detach", "whoami"}, opts, stopCh)
+		}
 	default:
 		return
 	}
@@ -1681,17 +1842,14 @@ func (gui *GUI) execOther() {
 	needsConfirm := false
 
 	switch gui.submenuIdx {
-	case 0:
-		name = "Prune"
-		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
-			return kamal.RunKamalWithStop([]string{"prune"}, opts, stopCh)
-		}
-		needsConfirm = true
-	case 1:
-		name = "Build"
-		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
-			return kamal.RunKamalWithStop([]string{"build"}, opts, stopCh)
-		}
+	case 0: // Prune >
+		gui.screen = ScreenPrune
+		gui.submenuIdx = 0
+		return
+	case 1: // Build >
+		gui.screen = ScreenBuild
+		gui.submenuIdx = 0
+		return
 	case 2:
 		name = "Config"
 		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
@@ -1728,62 +1886,205 @@ func (gui *GUI) execOther() {
 			return kamal.RunKamalWithStop([]string{"lock", "release", "--force"}, opts, stopCh)
 		}
 		needsConfirm = true
-	case 9:
-		name = "Registry Login"
-		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
-			return kamal.RunKamalWithStop([]string{"registry", "login"}, opts, stopCh)
-		}
-	case 10:
-		name = "Registry Logout"
-		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
-			return kamal.RunKamalWithStop([]string{"registry", "logout"}, opts, stopCh)
-		}
+	case 9: // Registry >
+		gui.screen = ScreenRegistry
+		gui.submenuIdx = 0
+		return
+	case 10: // Secrets >
+		gui.screen = ScreenSecrets
+		gui.submenuIdx = 0
+		return
 	case 11:
-		name = "Secrets"
-		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
-			return kamal.RunKamalWithStop([]string{"secrets"}, opts, stopCh)
-		}
-	case 12:
 		name = "Env Push"
 		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
 			return kamal.RunKamalWithStop([]string{"env", "push"}, opts, stopCh)
 		}
-	case 13:
+	case 12:
 		name = "Env Pull"
 		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
 			return kamal.RunKamalWithStop([]string{"env", "pull"}, opts, stopCh)
 		}
-	case 14:
+	case 13:
 		name = "Env Delete"
 		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
 			return kamal.RunKamalWithStop([]string{"env", "delete"}, opts, stopCh)
 		}
 		needsConfirm = true
-	case 15:
+	case 14:
 		name = "Docs"
 		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
 			return kamal.RunKamalWithStop([]string{"docs"}, opts, stopCh)
 		}
-	case 16:
+	case 15:
 		name = "Help"
 		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
 			return kamal.RunKamalWithStop([]string{"help"}, opts, stopCh)
 		}
-	case 17:
+	case 16:
 		name = "Init"
 		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
 			return kamal.RunKamalWithStop([]string{"init"}, opts, stopCh)
 		}
-	case 18:
+	case 17:
 		name = "Upgrade"
 		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
 			return kamal.RunKamalWithStop([]string{"upgrade"}, opts, stopCh)
 		}
-	case 19:
+	case 18:
 		name = "Version"
 		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
 			return kamal.RunKamalWithStop([]string{"version"}, opts, stopCh)
 		}
+	default:
+		return
+	}
+
+	if needsConfirm {
+		gui.runWithConfirm(name, getDestructiveMessage(gui.screen, gui.submenuIdx), fn)
+	} else {
+		gui.runCommand(name, fn)
+	}
+}
+
+func (gui *GUI) execBuild() {
+	opts := gui.runOpts()
+	var fn func(stopCh <-chan struct{}) (kamal.Result, error)
+	var name string
+	needsConfirm := false
+
+	switch gui.submenuIdx {
+	case 0:
+		name = "Build Push"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"build", "push"}, opts, stopCh)
+		}
+	case 1:
+		name = "Build Pull"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"build", "pull"}, opts, stopCh)
+		}
+	case 2:
+		name = "Build Deliver"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"build", "deliver"}, opts, stopCh)
+		}
+	case 3:
+		name = "Build Dev"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"build", "dev"}, opts, stopCh)
+		}
+	case 4:
+		name = "Build Create"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"build", "create"}, opts, stopCh)
+		}
+	case 5:
+		name = "Build Remove"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"build", "remove"}, opts, stopCh)
+		}
+		needsConfirm = true
+	case 6:
+		name = "Build Details"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"build", "details"}, opts, stopCh)
+		}
+	default:
+		return
+	}
+
+	if needsConfirm {
+		gui.runWithConfirm(name, getDestructiveMessage(gui.screen, gui.submenuIdx), fn)
+	} else {
+		gui.runCommand(name, fn)
+	}
+}
+
+func (gui *GUI) execPrune() {
+	opts := gui.runOpts()
+	var fn func(stopCh <-chan struct{}) (kamal.Result, error)
+	var name string
+
+	switch gui.submenuIdx {
+	case 0:
+		name = "Prune All"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"prune", "all"}, opts, stopCh)
+		}
+	case 1:
+		name = "Prune Images"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"prune", "images"}, opts, stopCh)
+		}
+	case 2:
+		name = "Prune Containers"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"prune", "containers"}, opts, stopCh)
+		}
+	default:
+		return
+	}
+
+	// All prune actions need confirmation
+	gui.runWithConfirm(name, getDestructiveMessage(gui.screen, gui.submenuIdx), fn)
+}
+
+func (gui *GUI) execSecrets() {
+	opts := gui.runOpts()
+	var fn func(stopCh <-chan struct{}) (kamal.Result, error)
+	var name string
+
+	switch gui.submenuIdx {
+	case 0:
+		name = "Secrets Fetch"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"secrets", "fetch"}, opts, stopCh)
+		}
+	case 1:
+		name = "Secrets Extract"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"secrets", "extract"}, opts, stopCh)
+		}
+	case 2:
+		name = "Secrets Print"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"secrets", "print"}, opts, stopCh)
+		}
+	default:
+		return
+	}
+
+	gui.runCommand(name, fn)
+}
+
+func (gui *GUI) execRegistry() {
+	opts := gui.runOpts()
+	var fn func(stopCh <-chan struct{}) (kamal.Result, error)
+	var name string
+	needsConfirm := false
+
+	switch gui.submenuIdx {
+	case 0:
+		name = "Registry Setup"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"registry", "setup"}, opts, stopCh)
+		}
+	case 1:
+		name = "Registry Login"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"registry", "login"}, opts, stopCh)
+		}
+	case 2:
+		name = "Registry Logout"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"registry", "logout"}, opts, stopCh)
+		}
+	case 3:
+		name = "Registry Remove"
+		fn = func(stopCh <-chan struct{}) (kamal.Result, error) {
+			return kamal.RunKamalWithStop([]string{"registry", "remove"}, opts, stopCh)
+		}
+		needsConfirm = true
 	default:
 		return
 	}

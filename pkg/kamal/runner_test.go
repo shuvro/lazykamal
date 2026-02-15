@@ -325,3 +325,61 @@ func TestCommandBuilding(t *testing.T) {
 		})
 	}
 }
+
+func TestNewCommandBuilding(t *testing.T) {
+	// Test that all new subcommands produce correct command slices.
+	// We verify by checking buildGlobalArgs + subcommand produce expected args.
+
+	tests := []struct {
+		name       string
+		subcommand []string
+		opts       RunOptions
+		wantArgs   []string // expected full args slice (subcommand + global)
+	}{
+		// Build subcommands
+		{name: "build push", subcommand: []string{"build", "push"}, opts: RunOptions{}, wantArgs: []string{"build", "push"}},
+		{name: "build pull", subcommand: []string{"build", "pull"}, opts: RunOptions{}, wantArgs: []string{"build", "pull"}},
+		{name: "build deliver", subcommand: []string{"build", "deliver"}, opts: RunOptions{}, wantArgs: []string{"build", "deliver"}},
+		{name: "build dev", subcommand: []string{"build", "dev"}, opts: RunOptions{}, wantArgs: []string{"build", "dev"}},
+		{name: "build create", subcommand: []string{"build", "create"}, opts: RunOptions{}, wantArgs: []string{"build", "create"}},
+		{name: "build remove", subcommand: []string{"build", "remove"}, opts: RunOptions{}, wantArgs: []string{"build", "remove"}},
+		{name: "build details", subcommand: []string{"build", "details"}, opts: RunOptions{}, wantArgs: []string{"build", "details"}},
+		// Prune subcommands
+		{name: "prune all", subcommand: []string{"prune", "all"}, opts: RunOptions{}, wantArgs: []string{"prune", "all"}},
+		{name: "prune images", subcommand: []string{"prune", "images"}, opts: RunOptions{}, wantArgs: []string{"prune", "images"}},
+		{name: "prune containers", subcommand: []string{"prune", "containers"}, opts: RunOptions{}, wantArgs: []string{"prune", "containers"}},
+		// Secrets subcommands
+		{name: "secrets fetch", subcommand: []string{"secrets", "fetch"}, opts: RunOptions{}, wantArgs: []string{"secrets", "fetch"}},
+		{name: "secrets extract", subcommand: []string{"secrets", "extract"}, opts: RunOptions{}, wantArgs: []string{"secrets", "extract"}},
+		{name: "secrets print", subcommand: []string{"secrets", "print"}, opts: RunOptions{}, wantArgs: []string{"secrets", "print"}},
+		// Registry subcommands
+		{name: "registry setup", subcommand: []string{"registry", "setup"}, opts: RunOptions{}, wantArgs: []string{"registry", "setup"}},
+		{name: "registry remove", subcommand: []string{"registry", "remove"}, opts: RunOptions{}, wantArgs: []string{"registry", "remove"}},
+		// Deploy no-cache variants
+		{name: "deploy no-cache", subcommand: []string{"deploy", "--no-cache"}, opts: RunOptions{}, wantArgs: []string{"deploy", "--no-cache"}},
+		{name: "redeploy no-cache", subcommand: []string{"redeploy", "--no-cache"}, opts: RunOptions{}, wantArgs: []string{"redeploy", "--no-cache"}},
+		{name: "setup no-cache", subcommand: []string{"setup", "--no-cache"}, opts: RunOptions{}, wantArgs: []string{"setup", "--no-cache"}},
+		// App additional subcommands
+		{name: "app stale_containers --stop", subcommand: []string{"app", "stale_containers", "--stop"}, opts: RunOptions{}, wantArgs: []string{"app", "stale_containers", "--stop"}},
+		{name: "app exec --detach whoami", subcommand: []string{"app", "exec", "--detach", "whoami"}, opts: RunOptions{}, wantArgs: []string{"app", "exec", "--detach", "whoami"}},
+		// With destination flag
+		{name: "build push with destination", subcommand: []string{"build", "push"}, opts: RunOptions{Destination: "production"}, wantArgs: []string{"build", "push", "--destination", "production"}},
+		{name: "prune all with destination", subcommand: []string{"prune", "all"}, opts: RunOptions{Destination: "staging"}, wantArgs: []string{"prune", "all", "--destination", "staging"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := append(tt.subcommand, buildGlobalArgs(tt.opts)...)
+
+			if len(args) != len(tt.wantArgs) {
+				t.Errorf("got %d args %v, want %d args %v", len(args), args, len(tt.wantArgs), tt.wantArgs)
+				return
+			}
+			for i, arg := range args {
+				if arg != tt.wantArgs[i] {
+					t.Errorf("args[%d] = %q, want %q", i, arg, tt.wantArgs[i])
+				}
+			}
+		})
+	}
+}

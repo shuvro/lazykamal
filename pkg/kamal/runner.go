@@ -437,6 +437,64 @@ func ProxyDetails(opts RunOptions) (Result, error) {
 }
 func ProxyRemove(opts RunOptions) (Result, error) { return RunKamal([]string{"proxy", "remove"}, opts) }
 
+// Build subcommands
+func BuildPush(opts RunOptions) (Result, error) { return RunKamal([]string{"build", "push"}, opts) }
+func BuildPull(opts RunOptions) (Result, error) { return RunKamal([]string{"build", "pull"}, opts) }
+func BuildDeliver(opts RunOptions) (Result, error) {
+	return RunKamal([]string{"build", "deliver"}, opts)
+}
+func BuildDev(opts RunOptions) (Result, error)     { return RunKamal([]string{"build", "dev"}, opts) }
+func BuildCreate(opts RunOptions) (Result, error)  { return RunKamal([]string{"build", "create"}, opts) }
+func BuildRemove(opts RunOptions) (Result, error)  { return RunKamal([]string{"build", "remove"}, opts) }
+func BuildDetails(opts RunOptions) (Result, error) { return RunKamal([]string{"build", "details"}, opts) }
+
+// Prune subcommands
+func PruneAll(opts RunOptions) (Result, error) { return RunKamal([]string{"prune", "all"}, opts) }
+func PruneImages(opts RunOptions) (Result, error) {
+	return RunKamal([]string{"prune", "images"}, opts)
+}
+func PruneContainers(opts RunOptions) (Result, error) {
+	return RunKamal([]string{"prune", "containers"}, opts)
+}
+
+// Secrets subcommands
+func SecretsFetch(opts RunOptions) (Result, error) {
+	return RunKamal([]string{"secrets", "fetch"}, opts)
+}
+func SecretsExtract(opts RunOptions) (Result, error) {
+	return RunKamal([]string{"secrets", "extract"}, opts)
+}
+func SecretsPrint(opts RunOptions) (Result, error) {
+	return RunKamal([]string{"secrets", "print"}, opts)
+}
+
+// Registry subcommands
+func RegistrySetup(opts RunOptions) (Result, error) {
+	return RunKamal([]string{"registry", "setup"}, opts)
+}
+func RegistryRemove(opts RunOptions) (Result, error) {
+	return RunKamal([]string{"registry", "remove"}, opts)
+}
+
+// Deploy variants
+func DeployNoCache(opts RunOptions) (Result, error) {
+	return RunKamal([]string{"deploy", "--no-cache"}, opts)
+}
+func RedeployNoCache(opts RunOptions) (Result, error) {
+	return RunKamal([]string{"redeploy", "--no-cache"}, opts)
+}
+func SetupNoCache(opts RunOptions) (Result, error) {
+	return RunKamal([]string{"setup", "--no-cache"}, opts)
+}
+
+// App additional subcommands
+func AppStaleContainersStop(opts RunOptions) (Result, error) {
+	return RunKamal([]string{"app", "stale_containers", "--stop"}, opts)
+}
+func AppExecDetach(opts RunOptions, cmd ...string) (Result, error) {
+	return RunKamal(append([]string{"app", "exec", "--detach"}, cmd...), opts)
+}
+
 // ProxyBootConfigGet/Set/Reset (deprecated in favor of proxy run config; still available in Kamal).
 func ProxyBootConfigGet(opts RunOptions) (Result, error) {
 	return RunKamal([]string{"proxy", "boot_config", "get"}, opts)

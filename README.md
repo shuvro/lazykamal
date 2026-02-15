@@ -311,14 +311,18 @@ Lazykamal exposes **all** Kamal CLI commands via the TUI:
 
 | Category | Commands |
 |----------|----------|
-| **Deploy** | deploy, deploy (skip push), redeploy, rollback, setup |
-| **App** | boot, start, stop, restart, logs, containers, details, images, version, stale_containers, exec (e.g. whoami), maintenance, live, remove |
+| **Deploy** | deploy, deploy (skip push), redeploy, rollback, setup, deploy (no cache), redeploy (no cache), setup (no cache) |
+| **App** | boot, start, stop, restart, logs, containers, details, images, version, stale_containers, exec (whoami), maintenance, live, remove, stale_containers (--stop), exec (--detach whoami) |
 | **Server** | bootstrap, exec (date, uptime) |
 | **Accessory** | boot/start/stop/restart/reboot/remove/details/logs all, upgrade |
-| **Proxy** | boot, start, stop, restart, reboot, reboot (rolling), logs, details, remove, boot_config get/set/reset |
-| **Other** | prune, build, config, details, audit, lock (status/acquire/release/release --force), registry (login/logout), secrets, env (push/pull/delete), docs, help, init, upgrade, version |
+| **Proxy** | boot, start, stop, restart, reboot, reboot (rolling), logs, details, remove, boot_config get/set/reset (deprecated) |
+| **Build** | push, pull, deliver, dev, create, remove, details |
+| **Prune** | all, images, containers |
+| **Secrets** | fetch, extract, print |
+| **Registry** | setup, login, logout, remove |
+| **Other** | config, details, audit, lock (status/acquire/release/release --force), env (push/pull/delete), docs, help, init, upgrade, version |
 
-Top-level Kamal commands **build**, **registry**, **secrets**, **docs**, **help**, **init**, and **upgrade** are under **Other**. Options like `--primary`, `--hosts`, `--roles`, `--version` are passed via the selected destination (config file and destination name); future versions may expose them in the UI.
+**Build**, **Prune**, **Registry**, and **Secrets** are accessible as submenus from the **Other** menu. Options like `--primary`, `--hosts`, `--roles`, `--version` are passed via the selected destination (config file and destination name); future versions may expose them in the UI.
 
 ## Comparison with lazydocker
 

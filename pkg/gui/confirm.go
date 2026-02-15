@@ -130,6 +130,9 @@ func getDestructiveMessage(screen Screen, idx int) string {
 		if idx == 13 {
 			return "Remove the application? This cannot be undone."
 		}
+		if idx == 15 {
+			return "Stop and remove stale containers?"
+		}
 	case ScreenAccessory:
 		if idx == 2 {
 			return "Stop all accessories?"
@@ -145,14 +148,29 @@ func getDestructiveMessage(screen Screen, idx int) string {
 			return "Remove the proxy? This cannot be undone."
 		}
 	case ScreenOther:
-		if idx == 0 {
-			return "Prune old images and containers?"
-		}
 		if idx == 8 {
 			return "Force release the lock?"
 		}
-		if idx == 14 {
+		if idx == 13 {
 			return "Delete environment variables?"
+		}
+	case ScreenBuild:
+		if idx == 5 {
+			return "Remove the build setup?"
+		}
+	case ScreenPrune:
+		if idx == 0 {
+			return "Prune all old images and containers?"
+		}
+		if idx == 1 {
+			return "Prune old images?"
+		}
+		if idx == 2 {
+			return "Prune old containers?"
+		}
+	case ScreenRegistry:
+		if idx == 3 {
+			return "Remove registry configuration?"
 		}
 	}
 	return "Are you sure you want to proceed?"
