@@ -38,18 +38,18 @@ func TestScreenString(t *testing.T) {
 // menuItemCounts maps each screen to its expected number of menu items.
 // This must stay in sync with the render functions and keyDown max bounds.
 var menuItemCounts = map[Screen]int{
-	ScreenMainMenu: 7,  // Deploy, App, Server, Accessory, Proxy, Other, Config
-	ScreenDeploy:   8,  // Deploy, Deploy (skip push), Redeploy, Rollback, Setup, Deploy (no cache), Redeploy (no cache), Setup (no cache)
-	ScreenApp:      17, // Boot..Live:App logs + Stale containers (stop) + Exec: whoami (detach)
-	ScreenServer:   3,  // Bootstrap, Exec: date, Exec: uptime
+	ScreenMainMenu:  7,  // Deploy, App, Server, Accessory, Proxy, Other, Config
+	ScreenDeploy:    8,  // Deploy, Deploy (skip push), Redeploy, Rollback, Setup, Deploy (no cache), Redeploy (no cache), Setup (no cache)
+	ScreenApp:       17, // Boot..Live:App logs + Stale containers (stop) + Exec: whoami (detach)
+	ScreenServer:    3,  // Bootstrap, Exec: date, Exec: uptime
 	ScreenAccessory: 10, // Boot..Upgrade
-	ScreenProxy:    13, // Boot..Live: Proxy logs
-	ScreenOther:    19, // Prune>, Build>, Config..Version
-	ScreenConfig:   4,  // Edit deploy, Edit secrets, Redeploy, App restart
-	ScreenBuild:    7,  // Push, Pull, Deliver, Dev, Create, Remove, Details
-	ScreenPrune:    3,  // All, Images, Containers
-	ScreenSecrets:  3,  // Fetch, Extract, Print
-	ScreenRegistry: 4,  // Setup, Login, Logout, Remove
+	ScreenProxy:     13, // Boot..Live: Proxy logs
+	ScreenOther:     19, // Prune>, Build>, Config..Version
+	ScreenConfig:    4,  // Edit deploy, Edit secrets, Redeploy, App restart
+	ScreenBuild:     7,  // Push, Pull, Deliver, Dev, Create, Remove, Details
+	ScreenPrune:     3,  // All, Images, Containers
+	ScreenSecrets:   3,  // Fetch, Extract, Print
+	ScreenRegistry:  4,  // Setup, Login, Logout, Remove
 }
 
 func TestKeyDownMaxBounds(t *testing.T) {

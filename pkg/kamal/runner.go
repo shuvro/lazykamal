@@ -443,10 +443,12 @@ func BuildPull(opts RunOptions) (Result, error) { return RunKamal([]string{"buil
 func BuildDeliver(opts RunOptions) (Result, error) {
 	return RunKamal([]string{"build", "deliver"}, opts)
 }
-func BuildDev(opts RunOptions) (Result, error)     { return RunKamal([]string{"build", "dev"}, opts) }
-func BuildCreate(opts RunOptions) (Result, error)  { return RunKamal([]string{"build", "create"}, opts) }
-func BuildRemove(opts RunOptions) (Result, error)  { return RunKamal([]string{"build", "remove"}, opts) }
-func BuildDetails(opts RunOptions) (Result, error) { return RunKamal([]string{"build", "details"}, opts) }
+func BuildDev(opts RunOptions) (Result, error)    { return RunKamal([]string{"build", "dev"}, opts) }
+func BuildCreate(opts RunOptions) (Result, error) { return RunKamal([]string{"build", "create"}, opts) }
+func BuildRemove(opts RunOptions) (Result, error) { return RunKamal([]string{"build", "remove"}, opts) }
+func BuildDetails(opts RunOptions) (Result, error) {
+	return RunKamal([]string{"build", "details"}, opts)
+}
 
 // Prune subcommands
 func PruneAll(opts RunOptions) (Result, error) { return RunKamal([]string{"prune", "all"}, opts) }
